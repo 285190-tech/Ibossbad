@@ -1,36 +1,36 @@
-# Ibossbad — Scramjet + WISP Stealth Web Browser & Proxy
+# Ibossbad v3.0 — Scramjet + WISP Stealth Browser, 200+ Games Hub & Admin Command Center
 
-Ibossbad is an all-in-one, school-network-hardened web browser and proxy combining **Mercury Workshop's Scramjet Service-Worker Interception Engine**, **BareMux WASM TLS (`Libcurl` & `Epoxy`)**, **GUST SW-Free Blob WISP Fallback**, and an **Acorn AST Server Stream Engine (`/proxy/`)**, wrapped in a multi-tab stealth browser with **Tab Cloaking**, **about:blank / blob: Launchers**, **Boss/Panic Key**, **Ad/Tracker/WebRTC Shield**, and **Supabase Cloud Sync**.
-
----
-
-## Triple-Engine Architecture
-
-1. **Scramjet Service-Worker Engine (`@mercuryworkshop/scramjet` — Default)**
-   - Registers a root Service Worker (`/sw.js` with `Service-Worker-Allowed: /`) powered by `ScramjetServiceWorker` and `ScramjetController` (`scramjet.wasm.wasm` Rust/OXC rewriter + SW sync XHR).
-   - Routes every proxied request, WebSocket, Worker, and media stream through `@mercuryworkshop/bare-mux` over **WISP** using your choice of **Libcurl WASM (`@mercuryworkshop/libcurl-transport` — TLS 1.3 + HTTP/2)** or **Epoxy Rust TLS (`@mercuryworkshop/epoxy-transport`)**.
-   - Supports complex modern SPAs and games including **YouTube, Discord, Poki, Neal.fun / Infinite Craft, Google, CAPTCHAs, and WebGL games** with zero domain leaks in network logs.
-
-2. **GUST Blob WISP Engine (Automatic SW-Free Fallback)**
-   - If a managed Chromebook or browser context blocks Service Worker registration, Ibossbad **automatically falls back** to its built-in **GUST Blob WISP** engine (`public/wisp-engine.js`), which fetches via `libcurl.js` WASM over WISP and renders inside an isolated `blob:` document with virtual DOM/XHR/Fetch interception.
-
-3. **Server Stream Engine (`/proxy/` — Classic Unblocker + Acorn AST)**
-   - Server-side streaming HTTP/WebSocket proxy with Brotli/Zstd/Gzip decompression, Acorn AST `window.location` / `document.location` rewriting (`lib/location-rewriter.js`), `Content-Security-Policy` / `X-Frame-Options` stripping, and per-origin `localStorage`/`sessionStorage` isolation.
-
-4. **Built-in `/wisp/` Server + Multi-Relay Pool Failover**
-   - Ships `@mercuryworkshop/wisp-js` directly on the same HTTP/HTTPS port (`/wisp/`) so Render (`wss://ibossbad.onrender.com/wisp/`) requires zero extra ports or external domains, with automatic latency-probed WISP pool failover when needed.
+Ibossbad is an all-in-one stealth web browser, game hub, and proxy combining **Mercury Workshop's Scramjet Service-Worker Interception Engine**, **BareMux WASM TLS (`Libcurl` & `Epoxy`)**, **GUST SW-Free Blob WISP Fallback**, and an **Acorn AST Server Stream Engine (`/proxy/`)** with **200+ Real HTML5/Flash Games**, **`.zip` Browser Extensions**, **Stealth v2**, **Supabase Cloud Sync**, and a full **`iboss://admin` Command Center**.
 
 ---
 
-## Stealth, Privacy & Cloud Features
+## Core Capabilities
 
-- **Multi-Tab Browser UI**: Tabs, omnibox with search-engine switcher (DuckDuckGo, Brave, Google, Wikipedia), Quick Launch cards, bookmarks bar, live **WISP Network Inspector Drawer**, and Ad/Tracker/WebRTC Shield counter.
-- **Stealth & Anti-Detection Suite**:
-  - **Tab Cloaking** presets (*Google Classroom*, *Google Docs*, *Google Drive*, *Canvas LMS*, *Clever Portal*, *IXL*, *Khan Academy*, or custom title + favicon).
-  - **`about:blank` & `blob:` Stealth Launchers** so URL bar & browser history stay clean.
-  - **Boss / Panic Hotkey** (default `` ` ``, customizable) — works even while focused inside Scramjet or GUST game iframes.
-- **Access Gate + Supabase Cloud Sync**:
-  - Unlock via shared **Passcode** (default `ibossbad`, configurable via `ACCESS_CODE`) or **Supabase Email + Password** account (`public.ibossbad_user_data` with Row-Level Security) to sync bookmarks, engine preferences, cloak settings, and panic keys across devices.
+### 1. Triple-Engine Proxy Architecture
+- **Scramjet Service-Worker Engine (`@mercuryworkshop/scramjet` — Default)**: Intercepts fetch, XHR, WebSockets, Workers, and media streams over `@mercuryworkshop/bare-mux` (`Libcurl` WASM TLS 1.3 + HTTP/2 or `Epoxy` Rust TLS) with popup catching and automatic WISP pool failover (`wss://pgis-wisp.joytree.site/`, DefinitelyScience, MercuryWorkshop, etc.).
+- **GUST Blob WISP Engine**: Automatic Service-Worker-free fallback (`public/wisp-engine.js`).
+- **Server Stream Engine (`/proxy/`)**: Streaming HTTP/WebSocket proxy with Brotli/Zstd/Gzip decompression and Acorn AST location rewriting.
+
+### 2. Internal `iboss://` Protocol Pages & `.zip` Extensions
+- `iboss://newtab` — New Tab dashboard with particle starfield, Quick Launch & bookmarks.
+- `iboss://games` — **200+ Real Web, WebGL, EaglerCraft & Ruffle Flash Games** with search aliases, category filters, Floating Mini-Window (PiP), and Game Request inbox.
+- `iboss://extensions` — Install Zinc-compatible **`.zip` extensions** (`JSZip` + `IndexedDB` `manifest.json`) or toggle **Live FPS Counter HUD**, **Force Dark Mode**, and **Custom CSS/JS Userscripts**.
+- `iboss://storage` — Inspect `localStorage`, export/import `.json` game saves, and sync game progress to **Supabase Cloud**.
+- `iboss://editor` — Live HTML/CSS/JS code playground with `blob:` pop-out.
+- `iboss://urls` & `iboss://changelog` — Directory of built-in pages & release notes.
+- `iboss://admin` — Instance Owner **Admin Command Center**.
+- **`javascript:` Omnibox Support** + **Unblocked DevTools Console & DOM Inspector Drawer**.
+
+### 3. Stealth v2, Themes & Chromebook Performance
+- **Camouflage Study-App Front Door** (*FocusLab Pomodoro Timer + Calculator*) — unlock via Study Room Code, `Ctrl+Shift+U`, or triple-clicking the footer version.
+- **Boss-Key Google Docs Decoy Overlay**: Single-press `` ` `` covers the screen with an editable AP History Google Doc & mutes all tabs without losing game progress; double-press `` ` `` performs an emergency redirect.
+- **Auto-Cloak on Tab Switch**, **Anti-Close Guard (`beforeunload`)**, **`about:blank` & `blob:` Launchers**, **Split-Screen Dual-Tab View**, **Draggable PiP Mini-Window**, **Per-Tab Mute**, and **Chromebook RAM Saver** (auto-sleeps idle background tabs + auto-restores open tabs).
+- **Preset Themes** (*Midnight*, *OLED Black*, *Catppuccin Mocha*, *Cyberpunk*, *Nord*) + **Granular Color-Picker Theme Builder** & **Custom Keyboard Shortcuts**.
+
+### 4. Security, 12h Keys & `iboss://admin` Command Center
+- **Passcode-Locked Cloud Accounts**: Both Passcode/Key unlock and Supabase Cloud Account sign-in/sign-up enforce the active `PROXY_PASSCODE` (or a valid 12h temporary key).
+- **Live Connected Users & Remote Controls**: View online users in real time and trigger **Force-Redirect**, **Freeze/Pause Screen**, **Direct Popup DM**, **Live Broadcast Banner**, or **1-Click "Teacher Walked In" Global Mass-Cloak**.
+- **Access History, IP Bans & Domain Policies**: Filterable per-IP/per-user browsing history (with CSV/JSON export), 1-click **IP & `/24` CIDR Ban/Unban** (with self-ban protection & brute-force auto-ban), **Domain Blacklist**, **Whitelist-Only Mode**, **Per-User/IP Rules**, **Time-of-Day Schedules**, **12h/24h/7d Key Generator + LootLabs Hook**, **VIP/MOD Roles**, **Moderated Instance Chat (`[ADMIN]` badge)**, and **Discord Webhook Alerts** — persisted to Supabase.
 
 ---
 
@@ -41,24 +41,25 @@ npm install
 npm start
 ```
 
-Open `http://localhost:8080` (default passcode: `ibossbad`).
+- **Browser URL**: `http://localhost:8080` (default passcode: `ibossbad`)
+- **Admin Command Center**: Open `iboss://admin` in the address bar or click the lock icon in the toolbar (default `ADMIN_PASSWORD`: `ibossadmin` — rotatable live inside `iboss://admin`).
 
-### Environment Variables (Render / Production)
+### Environment Variables
 
 | Variable | Default | Description |
 | --- | --- | --- |
 | `PORT` | `8080` | HTTP + WebSocket (`/wisp/` & `/proxy/`) listen port |
-| `ACCESS_CODE` | `ibossbad` | Shared passcode for quick unlock (`AUTH_REQUIRED=false` disables gate) |
+| `PROXY_PASSCODE` | `ibossbad` | Shared passcode required for access & account sign-in (`DISABLE_PASSCODE=true` disables) |
+| `ADMIN_PASSWORD` | `ibossadmin` | Password for `iboss://admin` Command Center |
 | `SESSION_SECRET` | *(auto)* | HMAC secret for signed HttpOnly session cookies |
-| `SUPABASE_URL` | *(configured)* | Supabase project URL for account auth & cloud sync |
-| `SUPABASE_ANON_KEY` | *(configured)* | Supabase public anon key (protected by RLS) |
+| `SUPABASE_URL` | *(configured)* | Supabase project URL for account auth, saves & admin persistence |
+| `SUPABASE_ANON_KEY` | *(configured)* | Supabase anon key (protected by RLS & `SECURITY DEFINER` RPCs) |
 
 ---
 
 ## Testing & Linting
 
 ```bash
-npm run autofix
 npm test
 ```
 

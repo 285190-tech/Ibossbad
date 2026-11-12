@@ -35,6 +35,7 @@ module.exports = {
         $scramjetLoadWorker: "readonly",
         $scramjetLoadController: "readonly",
         BareMux: "readonly",
+        JSZip: "readonly",
       },
       parserOptions: {
         ecmaVersion: 2020,
