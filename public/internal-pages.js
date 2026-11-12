@@ -1,6 +1,23 @@
 "use strict";
 
 (function (window) {
+  var FAV_GAMES_KEY = "ibossbad_fav_games_v1";
+  var RECENT_GAMES_KEY = "ibossbad_recent_games_v1";
+
+  var CAT_GRADIENTS = {
+    featured: "linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%)",
+    action: "linear-gradient(135deg, #ef4444 0%, #f97316 100%)",
+    arcade: "linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)",
+    sports: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+    minecraft: "linear-gradient(135deg, #22c55e 0%, #15803d 100%)",
+    puzzle: "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)",
+    idle: "linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%)",
+    escape: "linear-gradient(135deg, #64748b 0%, #334155 100%)",
+    flash: "linear-gradient(135deg, #dc2626 0%, #991b1b 100%)",
+    apps: "linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)",
+    community: "linear-gradient(135deg, #a855f7 0%, #6366f1 100%)",
+  };
+
   function esc(str) {
     return String(str === undefined || str === null ? "" : str)
       .replace(/&/g, "&amp;")
@@ -9,9 +26,43 @@
       .replace(/"/g, "&quot;");
   }
 
+  function loadStringList(key) {
+    try {
+      var raw = localStorage.getItem(key);
+      var parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (_e) {
+      return [];
+    }
+  }
+
+  function saveStringList(key, arr) {
+    try {
+      localStorage.setItem(key, JSON.stringify(arr));
+    } catch (_e) {}
+  }
+
   function createInternalPagesController(hooks) {
     var activeGameCategory = "all";
     var activeGameQuery = "";
+
+    function recordRecentGame(url, title) {
+      var list = loadJsonList(RECENT_GAMES_KEY).filter(function (x) {
+        return x && x.url !== url;
+      });
+      list.unshift({ url: url, title: title || url, ts: Date.now() });
+      saveStringList(RECENT_GAMES_KEY, list.slice(0, 10));
+    }
+
+    function loadJsonList(key) {
+      try {
+        var raw = localStorage.getItem(key);
+        var arr = raw ? JSON.parse(raw) : [];
+        return Array.isArray(arr) ? arr : [];
+      } catch (_e) {
+        return [];
+      }
+    }
 
     function renderUrlDirectory(container) {
       var pages = [
@@ -22,15 +73,44 @@
         },
         {
           url: "iboss://games",
-          title: "Games & Apps Library (180+)",
+          title: "Games & Apps Library (200+)",
           desc:
-            "Full MonkeyGG2 HTML5 + Ruffle Flash lineup & web apps with aliases.",
+            "Favorites, Recently Played, MonkeyGG2 HTML5 + Ruffle Flash lineup.",
+        },
+        {
+          url: "iboss://media",
+          title: "Media, Ad-Free YouTube & Radio",
+          desc:
+            "Invidious/Piped YouTube bypass, persistent Lofi/Synthwave radio & live TV.",
+        },
+        {
+          url: "iboss://emulator",
+          title: "Retro EmulatorJS ROM Player",
+          desc:
+            "Play local GBA, NDS, SNES, N64, NES & Genesis ROMs with gamepad support.",
+        },
+        {
+          url: "iboss://store",
+          title: "1-Click Mod & Bookmarklet Store",
+          desc:
+            "Eruda DevTools, 16x Video Speed, Idle Auto-Clicker & Element Zapper.",
         },
         {
           url: "iboss://extensions",
-          title: "Extensions (.zip) & Mods",
+          title: "Extensions (.zip) & Custom Scripts",
           desc:
-            "Install Zinc-compatible .zip extensions, FPS HUD & userscripts.",
+            "Install Zinc-compatible .zip extensions, FPS HUD & custom CSS/JS.",
+        },
+        {
+          url: "iboss://desktop",
+          title: "WebOS Multi-Window Desktop",
+          desc:
+            "Terbium/Anura-style floating multi-window desktop, dock & terminal.",
+        },
+        {
+          url: "iboss://downloads",
+          title: "Safe-Filename Proxy Downloader",
+          desc: "Download files through the proxy with clean custom filenames.",
         },
         {
           url: "iboss://storage",
@@ -45,28 +125,22 @@
             "Write and run HTML, CSS & JS with live preview or blob: popout.",
         },
         {
-          url: "iboss://settings",
-          title: "Settings, Themes & Shortcuts",
-          desc:
-            "Configure engine, WISP relays, custom colors, particles & hotkeys.",
-        },
-        {
           url: "iboss://changelog",
           title: "Version & Changelog",
-          desc: "See what's new in Ibossbad v3.0.",
+          desc: "See what's new in Ibossbad v4.0.",
         },
         {
           url: "iboss://admin",
           title: "Admin Command Center",
           desc:
-            "Live online users, remote controls, IP bans, access logs, 12h keys & roles.",
+            "Live users, remote controls, IP bans, 12h keys, invite links, MOTD & polls.",
         },
       ];
 
       container.innerHTML =
         '<div class="internal-wrap">' +
         '<div class="internal-hero"><h1>Internal <code>iboss://</code> Pages</h1>' +
-        "<p>Built-in browser pages inspired by Chrome &amp; Zinc — type any URL below into the address bar or click to open.</p></div>" +
+        "<p>Built-in browser pages — type any URL below into the address bar or click to open.</p></div>" +
         '<div class="internal-grid">' +
         pages
           .map(function (p) {
@@ -99,45 +173,175 @@
     function renderChangelog(container) {
       container.innerHTML =
         '<div class="internal-wrap">' +
-        '<div class="internal-hero"><h1>Ibossbad v3.0 Changelog</h1>' +
-        "<p>Scramjet + BareMux WASM TLS + MonkeyGG2 + Zinc + Admin Command Center</p></div>" +
+        '<div class="internal-hero"><h1>Ibossbad v4.0 Changelog</h1>' +
+        "<p>Scramjet + BareMux WASM TLS + Media/Emulator + WebOS Desktop + Admin v2</p></div>" +
         '<div class="changelog-list">' +
-        '<div class="internal-panel"><h3>v3.0 — Flagship Browser, 180+ Games &amp; Admin Suite</h3>' +
+        '<div class="internal-panel" style="margin-bottom:14px"><h3>v4.0 — Media Hub, Retro EmulatorJS, 1-Click Mod Store, WebOS &amp; Admin v2</h3>' +
         "<ul>" +
-        "<li>Added full <strong>180+ MonkeyGG2 HTML5 &amp; Flash Games</strong> catalog with search aliases, categories &amp; game request inbox.</li>" +
-        "<li>Added <strong>Zinc-style <code>iboss://</code> internal URLs</strong>, <code>.zip</code> Extension Importer (IndexedDB), <code>javascript:</code> bookmarklets, Live Code Editor &amp; Game-Save Cloud Sync.</li>" +
-        "<li>Added <strong>Admin Command Center (<code>iboss://admin</code>)</strong>: Live connected users, remote redirect/freeze/popup, Global Teacher Panic Mass-Cloak, IP bans, access history, 12h LootLabs keys, VIP/Mod roles, Discord webhooks &amp; domain policies.</li>" +
-        "<li>Added <strong>Stealth v2</strong>: Camouflage Study-App Front Door, Google Docs Boss-Key Decoy Overlay, Auto-Cloak on Tab Switch, Split-Screen Dual Tabs, Floating Mini-Window (PiP), Per-Tab Mute &amp; Chromebook RAM Saver.</li>" +
-        "<li>Locked Cloud Account sign-up/sign-in behind the active Proxy Passcode / 12h Key.</li>" +
+        "<li>Added <strong><code>iboss://media</code></strong>: Ad-free YouTube/Invidious/Piped smart bypass, persistent background Lofi/Synthwave radio mini-bar, and streaming apps.</li>" +
+        "<li>Added <strong><code>iboss://emulator</code></strong>: Local GBA, NDS, SNES, N64, NES &amp; Genesis ROM player powered by EmulatorJS + gamepad detection.</li>" +
+        "<li>Added <strong><code>iboss://store</code></strong>: 1-Click Eruda Full DevTools, 16x Video Speed Controller, Idle Auto-Clicker, Element Zapper &amp; Reader Focus.</li>" +
+        "<li>Added <strong><code>iboss://desktop</code></strong> (multi-window WebOS mode), <strong><code>iboss://downloads</code></strong> (Safe-Filename SSRF-guarded proxy downloader), <strong>Pinned Tabs</strong>, <strong><code>Ctrl+Shift+T</code> Reopen Closed Tab</strong>, and <strong>4 School Decoys</strong> (Google Docs, Desmos Graphing Calculator, Canvas Quiz, Khan Academy).</li>" +
+        "<li>Added <strong>Shareable 1-Click Invite Links (<code>/?invite=...</code>)</strong>, <strong>Login MOTD Popup</strong>, and <strong>Live Polls in Instance Chat</strong>.</li>" +
         "</ul></div>" +
-        '<div class="internal-panel"><h3>v2.0 — Scramjet Service-Worker Engine</h3>' +
-        "<ul><li>Integrated <code>@mercuryworkshop/scramjet</code> + <code>@mercuryworkshop/bare-mux</code> (Libcurl &amp; Epoxy WASM TLS) with automatic SW-free GUST Blob WISP fallback.</li></ul></div>" +
+        '<div class="internal-panel"><h3>v3.0 — 200+ Games, .zip Extensions &amp; Admin Command Center</h3>' +
+        "<ul><li>Added 200+ MonkeyGG2 HTML5 &amp; Ruffle Flash games, <code>iboss://admin</code> live user controls, IP bans, 12h keys &amp; Stealth v2.</li></ul></div>" +
         "</div></div>";
+    }
+
+    function renderStorePage(container) {
+      var items = window.IbossExtensions
+        ? window.IbossExtensions.storeCatalog
+        : [];
+      var enabledMap = window.IbossExtensions
+        ? window.IbossExtensions.getEnabledStoreMods()
+        : {};
+
+      container.innerHTML =
+        '<div class="internal-wrap">' +
+        '<div class="games-header-bar"><div><h1>1-Click Mod &amp; Bookmarklet Store (<code>iboss://store</code>)</h1>' +
+        "<p>Enable mods automatically on every proxied tab, or click <strong>Run on Tab</strong> to launch on your open page right now.</p></div>" +
+        '<button type="button" class="btn btn-secondary" id="jumpZipExtBtn">Upload Custom .zip Extension</button></div>' +
+        '<div class="internal-grid">' +
+        items
+          .map(function (it) {
+            var isOn = Boolean(enabledMap[it.id]);
+            return (
+              '<div class="internal-panel">' +
+              '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
+              '<span class="game-tile-badge">' +
+              esc(it.badge) +
+              '</span><span class="game-cat-tag">' +
+              esc(it.category) +
+              "</span></div>" +
+              "<h3>" +
+              esc(it.name) +
+              "</h3>" +
+              '<p class="settings-desc" style="min-height:42px">' +
+              esc(it.desc) +
+              "</p>" +
+              '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">' +
+              '<button type="button" class="btn btn-primary btn-xs" data-run-mod="' +
+              esc(it.id) +
+              '">Run on Active Tab</button>' +
+              (it.autoInjectable
+                ? '<button type="button" class="btn ' +
+                  (isOn ? "btn-danger" : "btn-secondary") +
+                  ' btn-xs" data-toggle-mod="' +
+                  esc(it.id) +
+                  '">' +
+                  (isOn ? "Auto-Inject: ON" : "Auto-Inject: OFF") +
+                  "</button>"
+                : "") +
+              "</div></div>"
+            );
+          })
+          .join("") +
+        "</div></div>";
+
+      container
+        .querySelector("#jumpZipExtBtn")
+        .addEventListener("click", function () {
+          hooks.navigate("iboss://extensions");
+        });
+
+      container.querySelectorAll("[data-toggle-mod]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var id = btn.getAttribute("data-toggle-mod");
+          var cur = Boolean(enabledMap[id]);
+          window.IbossExtensions.toggleStoreMod(id, !cur);
+          hooks.toast(
+            !cur
+              ? "Enabled auto-injection on proxied pages!"
+              : "Disabled auto-injection."
+          );
+          renderStorePage(container);
+        });
+      });
+
+      container.querySelectorAll("[data-run-mod]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var id = btn.getAttribute("data-run-mod");
+          var found = items.find(function (x) {
+            return x.id === id;
+          });
+          if (found && hooks.runScriptInOtherTab) {
+            hooks.runScriptInOtherTab(found.code, found.name);
+          }
+        });
+      });
     }
 
     function renderGamesHub(container) {
       var customGames = hooks.getCustomGames ? hooks.getCustomGames() : [];
-      var cats = window.IbossGamesCatalog
+      var favUrls = loadStringList(FAV_GAMES_KEY);
+      var recentList = loadJsonList(RECENT_GAMES_KEY);
+      var baseCats = window.IbossGamesCatalog
         ? window.IbossGamesCatalog.categories
         : [];
-      var results = window.IbossGamesCatalog
-        ? window.IbossGamesCatalog.search(
-            activeGameQuery,
-            activeGameCategory,
-            customGames
-          )
+      var cats = [
+        baseCats[0] || { id: "all", label: "All Games" },
+        { id: "favorites", label: "★ Favorites (" + favUrls.length + ")" },
+      ].concat(baseCats.slice(1));
+
+      var results;
+      if (activeGameCategory === "favorites") {
+        results = window.IbossGamesCatalog.search(
+          activeGameQuery,
+          "all",
+          customGames
+        ).filter(function (g) {
+          return favUrls.indexOf(g.url) !== -1;
+        });
+      } else {
+        results = window.IbossGamesCatalog
+          ? window.IbossGamesCatalog.search(
+              activeGameQuery,
+              activeGameCategory,
+              customGames
+            )
+          : [];
+      }
+
+      var pads = navigator.getGamepads
+        ? Array.from(navigator.getGamepads()).filter(Boolean)
         : [];
 
       container.innerHTML =
         '<div class="internal-wrap">' +
         '<div class="games-header-bar">' +
         "<div><h1>Games &amp; Apps Hub</h1>" +
-        "<p>180+ real HTML5, WebGL, EaglerCraft &amp; Ruffle Flash titles — launched over Scramjet + WISP.</p></div>" +
-        '<div class="games-header-actions">' +
+        "<p>200+ real HTML5, WebGL, EaglerCraft &amp; Ruffle Flash titles — star favorites or launch in PiP.</p></div>" +
+        '<div class="games-header-actions" style="display:flex;gap:8px;flex-wrap:wrap">' +
+        (pads.length
+          ? '<span class="cat-pill active">🎮 Gamepad Ready</span>'
+          : "") +
+        '<button type="button" class="btn btn-secondary" id="jumpEmulatorBtn">🕹️ Retro ROM Player</button>' +
         '<button type="button" class="btn btn-secondary" id="openGameReqModalBtn">+ Request Game / Report Broken</button>' +
         "</div></div>" +
+        (recentList.length > 0 &&
+        !activeGameQuery &&
+        activeGameCategory === "all"
+          ? '<div style="margin-bottom:16px"><div class="games-count-label">Recently Played</div>' +
+            '<div class="cat-pills">' +
+            recentList
+              .slice(0, 6)
+              .map(function (rg) {
+                return (
+                  '<button type="button" class="cat-pill" data-play-url="' +
+                  esc(rg.url) +
+                  '" data-play-title="' +
+                  esc(rg.title) +
+                  '">▶ ' +
+                  esc(rg.title) +
+                  "</button>"
+                );
+              })
+              .join("") +
+            "</div></div>"
+          : "") +
         '<div class="games-toolbar">' +
-        '<input type="text" id="gamesSearchInput" class="field-input games-search-input" placeholder="Search 180+ games &amp; aliases (e.g. btd5, mc, 1v1, slope, retro bowl, fnf)..." value="' +
+        '<input type="text" id="gamesSearchInput" class="field-input games-search-input" placeholder="Search 200+ games &amp; aliases (e.g. btd5, mc, 1v1, slope, retro bowl, fnf)..." value="' +
         esc(activeGameQuery) +
         '" />' +
         '<div class="cat-pills" id="gamesCatPills">' +
@@ -179,13 +383,24 @@
               })
               .join("")
               .toUpperCase();
+            var isFav = favUrls.indexOf(g.url) !== -1;
+            var grad = CAT_GRADIENTS[g.category] || CAT_GRADIENTS.featured;
             return (
               '<div class="game-tile">' +
-              '<div class="game-tile-top">' +
-              '<div class="game-tile-badge">' +
+              '<div class="game-cover-banner" style="background:' +
+              grad +
+              '">' +
+              '<span class="game-cover-initials">' +
               esc(initials || "GM") +
-              "</div>" +
-              '<span class="game-cat-tag">' +
+              "</span>" +
+              '<button type="button" class="game-fav-btn' +
+              (isFav ? " fav-on" : "") +
+              '" data-fav-url="' +
+              esc(g.url) +
+              '" title="Favorite">' +
+              (isFav ? "★" : "☆") +
+              "</button></div>" +
+              '<div class="game-tile-top"><span class="game-cat-tag">' +
               esc(g.category) +
               "</span></div>" +
               '<div class="game-tile-title">' +
@@ -194,6 +409,8 @@
               '<div class="game-tile-actions">' +
               '<button type="button" class="btn btn-primary btn-xs" data-play-url="' +
               esc(g.url) +
+              '" data-play-title="' +
+              esc(g.title) +
               '">Play</button>' +
               '<button type="button" class="btn btn-secondary btn-xs" data-pip-url="' +
               esc(g.url) +
@@ -205,6 +422,12 @@
           })
           .join("") +
         "</div></div>";
+
+      container
+        .querySelector("#jumpEmulatorBtn")
+        .addEventListener("click", function () {
+          hooks.navigate("iboss://emulator");
+        });
 
       var searchEl = container.querySelector("#gamesSearchInput");
       if (searchEl) {
@@ -229,18 +452,34 @@
         });
       });
 
+      container.querySelectorAll("[data-fav-url]").forEach(function (btn) {
+        btn.addEventListener("click", function (ev) {
+          ev.stopPropagation();
+          var u = btn.getAttribute("data-fav-url");
+          var cur = loadStringList(FAV_GAMES_KEY);
+          var idx = cur.indexOf(u);
+          if (idx === -1) cur.unshift(u);
+          else cur.splice(idx, 1);
+          saveStringList(FAV_GAMES_KEY, cur);
+          renderGamesHub(container);
+        });
+      });
+
       container.querySelectorAll("[data-play-url]").forEach(function (btn) {
         btn.addEventListener("click", function () {
-          hooks.openInNewTab(btn.getAttribute("data-play-url"));
+          var u = btn.getAttribute("data-play-url");
+          var t = btn.getAttribute("data-play-title");
+          recordRecentGame(u, t);
+          hooks.openInNewTab(u);
         });
       });
 
       container.querySelectorAll("[data-pip-url]").forEach(function (btn) {
         btn.addEventListener("click", function () {
-          hooks.openMiniPlayer(
-            btn.getAttribute("data-pip-url"),
-            btn.getAttribute("data-pip-title")
-          );
+          var u = btn.getAttribute("data-pip-url");
+          var t = btn.getAttribute("data-pip-title");
+          recordRecentGame(u, t);
+          hooks.openMiniPlayer(u, t);
         });
       });
 
@@ -289,8 +528,9 @@
 
       container.innerHTML =
         '<div class="internal-wrap">' +
-        '<div class="internal-hero"><h1>Extensions &amp; Built-In Mods</h1>' +
-        "<p>Install Zinc-compatible <code>.zip</code> extensions (<code>manifest.json</code>) or toggle built-in userscripts &amp; FPS HUD.</p></div>" +
+        '<div class="games-header-bar"><div><h1>Extensions &amp; Built-In Mods</h1>' +
+        "<p>Install Zinc-compatible <code>.zip</code> extensions (<code>manifest.json</code>) or open the 1-Click Mod Store.</p></div>" +
+        '<button type="button" class="btn btn-primary" id="openStoreFromExtBtn">Open 1-Click Mod Store</button></div>' +
         '<div class="internal-panel" style="margin-bottom:18px">' +
         "<h3>Install <code>.zip</code> Extension</h3>" +
         '<p class="settings-desc">Upload any Zinc-style <code>.zip</code> archive containing <code>manifest.json</code>, popup HTML, and scripts.</p>' +
@@ -356,6 +596,12 @@
         "</textarea></div>" +
         '<div style="margin-top:14px"><button type="button" class="btn btn-primary" id="saveModsBtn">Save Mods</button></div>' +
         "</div></div>";
+
+      container
+        .querySelector("#openStoreFromExtBtn")
+        .addEventListener("click", function () {
+          hooks.navigate("iboss://store");
+        });
 
       container
         .querySelector("#installExtZipBtn")
@@ -436,8 +682,12 @@
       for (var i = 0; i < localStorage.length; i++) {
         var k = localStorage.key(i);
         if (!k) continue;
-        // Never export sensitive auth tokens
-        if (k === "ibossbad.supabase.v1") continue;
+        if (
+          k === "ibossbad.supabase.v1" ||
+          k === "ibossbad_supabase_session_v1"
+        ) {
+          continue;
+        }
         out[k] = localStorage.getItem(k);
       }
       return out;
@@ -450,7 +700,7 @@
       container.innerHTML =
         '<div class="internal-wrap">' +
         '<div class="games-header-bar"><div><h1>Storage &amp; Game-Save Backup</h1>' +
-        "<p>Export, import, or sync your game progress (Infinite Craft, 2048, Cookie Clicker, etc.) across devices.</p></div>" +
+        "<p>Export, import, or sync your game progress (Infinite Craft, 2048, Cookie Clicker, EmulatorJS, etc.) across devices.</p></div>" +
         '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
         '<button type="button" class="btn btn-primary" id="exportSavesBtn">Export .json Backup</button>' +
         '<label class="btn btn-secondary" style="cursor:pointer">Import .json<input type="file" id="importSavesInput" accept=".json" style="display:none" /></label>' +
@@ -513,7 +763,11 @@
             var parsed = JSON.parse(await f.text());
             var map = parsed.saves || parsed;
             Object.keys(map).forEach(function (k) {
-              if (k !== "ibossbad.supabase.v1" && typeof map[k] === "string") {
+              if (
+                k !== "ibossbad.supabase.v1" &&
+                k !== "ibossbad_supabase_session_v1" &&
+                typeof map[k] === "string"
+              ) {
                 localStorage.setItem(k, map[k]);
               }
             });
@@ -595,6 +849,26 @@
         .trim();
       if (clean === "iboss://games") {
         renderGamesHub(container);
+        return true;
+      }
+      if (clean === "iboss://store") {
+        renderStorePage(container);
+        return true;
+      }
+      if (clean === "iboss://media" && hooks.mediaEmulator) {
+        hooks.mediaEmulator.renderMediaPage(container);
+        return true;
+      }
+      if (clean === "iboss://emulator" && hooks.mediaEmulator) {
+        hooks.mediaEmulator.renderEmulatorPage(container);
+        return true;
+      }
+      if (clean === "iboss://downloads" && hooks.mediaEmulator) {
+        hooks.mediaEmulator.renderDownloaderPage(container);
+        return true;
+      }
+      if (clean === "iboss://desktop" && hooks.mediaEmulator) {
+        hooks.mediaEmulator.renderDesktopMode(container);
         return true;
       }
       if (clean === "iboss://extensions") {

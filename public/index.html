@@ -165,31 +165,134 @@
       </div>
     </div>
 
-    <!-- Boss-Key Decoy School Overlay (Google Docs Disguise) -->
+    <!-- Boss-Key Multi-Template School Decoy Overlay (Docs / Desmos / Canvas / Khan) -->
     <div id="decoyOverlay" class="decoy-overlay hidden">
-      <header class="decoy-header">
-        <div class="decoy-doc-icon">≡</div>
-        <div>
-          <div class="decoy-doc-title">AP World History — Unit 5 Industrialization Reading Notes</div>
-          <div class="decoy-doc-menu">File &nbsp; Edit &nbsp; View &nbsp; Insert &nbsp; Format &nbsp; Tools &nbsp; Extensions &nbsp; Help &nbsp; · &nbsp; Saved to Drive</div>
+      <!-- Template 1: Google Docs -->
+      <div class="decoy-tpl" data-decoy-view="gdocs">
+        <header class="decoy-header">
+          <div class="decoy-doc-icon">≡</div>
+          <div>
+            <div class="decoy-doc-title">AP World History — Unit 5 Industrialization Reading Notes</div>
+            <div class="decoy-doc-menu">File &nbsp; Edit &nbsp; View &nbsp; Insert &nbsp; Format &nbsp; Tools &nbsp; Extensions &nbsp; Help &nbsp; · &nbsp; Saved to Drive</div>
+          </div>
+          <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
+            <select class="decoy-switcher" aria-label="Switch Study View">
+              <option value="gdocs">Google Docs</option>
+              <option value="desmos">Desmos Graphing</option>
+              <option value="canvas">Canvas Quiz</option>
+              <option value="khan">Khan Academy</option>
+            </select>
+            <span class="decoy-share-pill">Share</span>
+          </div>
+        </header>
+        <div class="decoy-toolbar">
+          100% &nbsp; | &nbsp; Normal text &nbsp; | &nbsp; Arial &nbsp; | &nbsp; 11 &nbsp; | &nbsp; <strong>B</strong> &nbsp; <em>I</em> &nbsp; <u>U</u>
         </div>
-        <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
-          <span class="decoy-share-pill">Share</span>
+        <div class="decoy-page-wrap">
+          <div class="decoy-paper" contenteditable="true" spellcheck="false">
+            <h2>Unit 5.3 — The Industrial Revolution Begins (1750–1900)</h2>
+            <p><strong>Essential Question:</strong> Explain how environmental factors contributed to industrialization from 1750 to 1900.</p>
+            <ul>
+              <li><strong>Agricultural Improvements:</strong> Crop rotation, seed drill (Jethro Tull), and enclosure movement increased food supply and urban labor migration.</li>
+              <li><strong>Natural Resources &amp; Geography:</strong> Access to coal deposits, iron ore, navigable rivers, and colonial raw materials accelerated mechanized textile production in Britain.</li>
+              <li><strong>Technological Innovations:</strong> James Watt's steam engine (1765), spinning jenny, and water frame shifted production from cottage industries to the factory system.</li>
+            </ul>
+            <p><em>Summary Analysis:</em> Industrialization fundamentally reorganized social hierarchies, urbanization patterns, and global trade networks throughout the nineteenth century...</p>
+          </div>
         </div>
-      </header>
-      <div class="decoy-toolbar">
-        100% &nbsp; | &nbsp; Normal text &nbsp; | &nbsp; Arial &nbsp; | &nbsp; 11 &nbsp; | &nbsp; <strong>B</strong> &nbsp; <em>I</em> &nbsp; <u>U</u>
       </div>
-      <div class="decoy-page-wrap">
-        <div class="decoy-paper" contenteditable="true" spellcheck="false">
-          <h2>Unit 5.3 — The Industrial Revolution Begins (1750–1900)</h2>
-          <p><strong>Essential Question:</strong> Explain how environmental factors contributed to industrialization from 1750 to 1900.</p>
-          <ul>
-            <li><strong>Agricultural Improvements:</strong> Crop rotation, seed drill (Jethro Tull), and enclosure movement increased food supply and urban labor migration.</li>
-            <li><strong>Natural Resources &amp; Geography:</strong> Access to coal deposits, iron ore, navigable rivers, and colonial raw materials accelerated mechanized textile production in Britain.</li>
-            <li><strong>Technological Innovations:</strong> James Watt's steam engine (1765), spinning jenny, and water frame shifted production from cottage industries to the factory system.</li>
-          </ul>
-          <p><em>Summary Analysis:</em> Industrialization fundamentally reorganized social hierarchies, urbanization patterns, and global trade networks throughout the nineteenth century...</p>
+
+      <!-- Template 2: Desmos Graphing Calculator -->
+      <div class="decoy-tpl hidden" data-decoy-view="desmos">
+        <header class="decoy-header" style="background:#1c252c;color:#fff;border-color:#2e3a44">
+          <strong style="font-size:16px;color:#2ecc71">desmos</strong>
+          <span style="font-size:13px;color:#cbd5e1">Untitled Graph — Precalculus Period 4</span>
+          <div style="margin-left:auto">
+            <select class="decoy-switcher" aria-label="Switch Study View">
+              <option value="gdocs">Google Docs</option>
+              <option value="desmos" selected>Desmos Graphing</option>
+              <option value="canvas">Canvas Quiz</option>
+              <option value="khan">Khan Academy</option>
+            </select>
+          </div>
+        </header>
+        <div class="desmos-layout">
+          <aside class="desmos-sidebar">
+            <div class="desmos-expr"><span class="expr-dot" style="background:#c74440"></span><input id="desmosFn1" type="text" value="Math.sin(x) * 2" /></div>
+            <div class="desmos-expr"><span class="expr-dot" style="background:#2d70b3"></span><input id="desmosFn2" type="text" value="0.25 * x * x - 3" /></div>
+            <button type="button" id="desmosPlotBtn" class="camo-btn camo-btn-primary" style="margin:10px;width:calc(100% - 20px)">Plot Functions</button>
+          </aside>
+          <canvas id="desmosCanvas" class="desmos-canvas" width="900" height="620"></canvas>
+        </div>
+      </div>
+
+      <!-- Template 3: Canvas LMS Quiz -->
+      <div class="decoy-tpl hidden" data-decoy-view="canvas">
+        <header class="decoy-header" style="background:#2d3b45;color:#fff">
+          <strong style="color:#e13f2b">CANVAS</strong>
+          <span>AP Biology · Unit 3 Cellular Energetics Practice Check</span>
+          <div style="margin-left:auto">
+            <select class="decoy-switcher" aria-label="Switch Study View">
+              <option value="gdocs">Google Docs</option>
+              <option value="desmos">Desmos Graphing</option>
+              <option value="canvas" selected>Canvas Quiz</option>
+              <option value="khan">Khan Academy</option>
+            </select>
+          </div>
+        </header>
+        <div class="decoy-page-wrap">
+          <div class="decoy-paper" style="min-height:auto;padding:36px 48px">
+            <h3>Question 1 <span style="float:right;font-size:12px;color:#64748b">1 pts</span></h3>
+            <p>Which stage of cellular respiration generates the greatest yield of ATP via chemiosmosis across the inner mitochondrial membrane?</p>
+            <label style="display:block;padding:8px 0"><input type="radio" name="cvq1" /> Glycolysis in the cytosol</label>
+            <label style="display:block;padding:8px 0"><input type="radio" name="cvq1" checked /> Oxidative phosphorylation &amp; electron transport chain</label>
+            <label style="display:block;padding:8px 0"><input type="radio" name="cvq1" /> Pyruvate oxidation</label>
+            <label style="display:block;padding:8px 0"><input type="radio" name="cvq1" /> Lactic acid fermentation</label>
+            <hr style="margin:24px 0;border:0;border-top:1px solid #e2e8f0" />
+            <h3>Question 2 <span style="float:right;font-size:12px;color:#64748b">1 pts</span></h3>
+            <p>How does competitive enzyme inhibition change the apparent reaction rate when substrate concentration is substantially increased?</p>
+            <textarea style="width:100%;border:1px solid #cbd5e1;border-radius:6px;padding:10px" rows="4" placeholder="Type your biological justification..."></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- Template 4: Khan Academy -->
+      <div class="decoy-tpl hidden" data-decoy-view="khan">
+        <header class="decoy-header" style="background:#0b2149;color:#fff">
+          <strong style="color:#14bf96">Khan Academy</strong>
+          <span>Algebra 2 · Polynomial Division &amp; Remainder Theorem</span>
+          <div style="margin-left:auto">
+            <select class="decoy-switcher" aria-label="Switch Study View">
+              <option value="gdocs">Google Docs</option>
+              <option value="desmos">Desmos Graphing</option>
+              <option value="canvas">Canvas Quiz</option>
+              <option value="khan" selected>Khan Academy</option>
+            </select>
+          </div>
+        </header>
+        <div class="decoy-page-wrap">
+          <div class="decoy-paper" style="min-height:auto;padding:40px 52px">
+            <h2>The Polynomial Remainder Theorem</h2>
+            <p>When a polynomial <code>p(x)</code> is divided by a linear factor <code>(x - a)</code>, the remainder of that division is equal to <code>p(a)</code>.</p>
+            <p><strong>Worked Practice Problem:</strong> Find the remainder when <code>p(x) = 2x³ - 5x² + 3x - 7</code> is divided by <code>(x - 2)</code>.</p>
+            <p><code>p(2) = 2(8) - 5(4) + 3(2) - 7 = 16 - 20 + 6 - 7 = -5</code></p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Login MOTD / Announcement Popup Modal -->
+    <div id="motdModal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+      <div class="modal-panel" style="max-width:480px">
+        <div class="modal-header">
+          <h2 id="motdModalTitle">Announcement</h2>
+          <button id="closeMotdBtn" type="button" class="icon-btn" aria-label="Close">✕</button>
+        </div>
+        <div class="modal-body">
+          <p id="motdModalBody" style="line-height:1.6;white-space:pre-wrap"></p>
+        </div>
+        <div class="modal-footer">
+          <button id="ackMotdBtn" type="button" class="btn btn-primary">Got It</button>
         </div>
       </div>
     </div>
@@ -224,8 +327,16 @@
         <div class="top-actions">
           <span id="keyTimerPill" class="pill-btn hidden" title="Temporary Access Key Remaining Time"></span>
 
-          <button id="gamesHubBtn" type="button" class="pill-btn" title="Open 180+ Games &amp; Apps Hub (iboss://games)">
+          <button id="gamesHubBtn" type="button" class="pill-btn" title="Open 200+ Games &amp; Apps Hub (iboss://games)">
             <span>Games</span>
+          </button>
+
+          <button id="mediaHubBtn" type="button" class="pill-btn" title="Ad-Free YouTube, Streaming &amp; Radio (iboss://media)">
+            <span>Media</span>
+          </button>
+
+          <button id="desktopModeBtn" type="button" class="pill-btn" title="Multi-Window WebOS Desktop Mode (iboss://desktop)">
+            <span>Desktop</span>
           </button>
 
           <button id="transportPillBtn" type="button" class="pill-btn transport-pill" title="Proxy Engine &amp; WISP Relay Status (Click to configure)">
@@ -370,6 +481,15 @@
       <!-- Compact Bookmarks Strip -->
       <div id="bookmarksBar" class="bookmarks-bar"></div>
 
+      <!-- Persistent Background Radio Mini-Bar -->
+      <div id="radioMiniBar" class="radio-mini-bar hidden">
+        <span id="radioNowPlaying">🎵 Radio</span>
+        <div style="display:flex;gap:6px">
+          <button id="radioPlayPauseBtn" type="button" class="btn btn-secondary btn-xs">Pause</button>
+          <button id="radioStopBtn" type="button" class="btn btn-danger btn-xs">Stop</button>
+        </div>
+      </div>
+
       <!-- Loading Progress Line -->
       <div id="pageProgressBar" class="progress-line hidden">
         <div class="progress-fill"></div>
@@ -420,11 +540,13 @@
 
             <!-- Internal Pages Quick Strip -->
             <div class="internal-pills-strip">
-              <button type="button" class="cat-pill" data-internal-jump="iboss://games">180+ Games Hub</button>
-              <button type="button" class="cat-pill" data-internal-jump="iboss://extensions">Extensions &amp; Mods</button>
-              <button type="button" class="cat-pill" data-internal-jump="iboss://storage">Save Backup &amp; Cloud</button>
-              <button type="button" class="cat-pill" data-internal-jump="iboss://editor">Live Code Playground</button>
-              <button type="button" class="cat-pill" data-internal-jump="iboss://urls">All iboss:// URLs</button>
+              <button type="button" class="cat-pill" data-internal-jump="iboss://games">200+ Games Hub</button>
+              <button type="button" class="cat-pill" data-internal-jump="iboss://media">Media, YT &amp; Radio</button>
+              <button type="button" class="cat-pill" data-internal-jump="iboss://emulator">Retro ROM Player</button>
+              <button type="button" class="cat-pill" data-internal-jump="iboss://store">1-Click Mod Store</button>
+              <button type="button" class="cat-pill" data-internal-jump="iboss://desktop">WebOS Desktop</button>
+              <button type="button" class="cat-pill" data-internal-jump="iboss://downloads">Safe Downloader</button>
+              <button type="button" class="cat-pill" data-internal-jump="iboss://storage">Save Backup</button>
               <button type="button" class="cat-pill" data-internal-jump="iboss://admin">Admin Center</button>
             </div>
 
@@ -501,6 +623,7 @@
             </div>
             <button id="closeChatBtn" type="button" class="icon-btn" aria-label="Close Chat">✕</button>
           </div>
+          <div id="chatPollBox" class="chat-poll-box hidden"></div>
           <div id="chatMessagesList" class="inspector-list"></div>
           <form id="chatSendForm" class="drawer-input-row">
             <input id="chatMsgInput" type="text" class="field-input" placeholder="Say something..." maxlength="320" autocomplete="off" />
@@ -710,6 +833,19 @@
               </div>
             </div>
 
+            <div class="toggle-row" style="margin-top:12px">
+              <div>
+                <strong>Boss-Key Decoy School Template</strong>
+                <p class="settings-desc">Disguise screen shown on 1x Boss-Key press.</p>
+              </div>
+              <select id="decoyTemplateSelect" class="field-select">
+                <option value="gdocs">Google Docs (AP History Notes)</option>
+                <option value="desmos">Desmos Graphing Calculator</option>
+                <option value="canvas">Canvas LMS Quiz</option>
+                <option value="khan">Khan Academy Lesson</option>
+              </select>
+            </div>
+
             <div class="admin-form-grid" style="margin-top:12px">
               <div>
                 <label class="field-label">Open Games Hub Shortcut</label>
@@ -756,12 +892,13 @@
     <script defer src="/vendor/libcurl/libcurl.js"></script>
     <script defer src="/vendor/acorn/acorn.js"></script>
     <script defer src="/vendor/acorn-walk/walk.js"></script>
-    <script defer src="/ui/games-catalog.js?v=3"></script>
-    <script defer src="/ui/extensions-engine.js?v=3"></script>
-    <script defer src="/ui/internal-pages.js?v=3"></script>
-    <script defer src="/ui/admin-panel.js?v=3"></script>
-    <script defer src="/ui/scramjet-engine.js?v=3"></script>
-    <script defer src="/ui/wisp-engine.js?v=3"></script>
-    <script defer src="/ui/app.js?v=3"></script>
+    <script defer src="/ui/games-catalog.js?v=4"></script>
+    <script defer src="/ui/extensions-engine.js?v=4"></script>
+    <script defer src="/ui/media-emulator.js?v=4"></script>
+    <script defer src="/ui/internal-pages.js?v=4"></script>
+    <script defer src="/ui/admin-panel.js?v=4"></script>
+    <script defer src="/ui/scramjet-engine.js?v=4"></script>
+    <script defer src="/ui/wisp-engine.js?v=4"></script>
+    <script defer src="/ui/app.js?v=4"></script>
   </body>
 </html>

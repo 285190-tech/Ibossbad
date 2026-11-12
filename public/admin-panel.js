@@ -411,7 +411,53 @@
 
     function renderKeysAndRolesTab(s) {
       var roleKeys = Object.keys(s.roles || {});
+      var invites = s.inviteLinks || [];
       return (
+        '<div class="internal-panel" style="margin-bottom:16px">' +
+        "<h3>Shareable 1-Click Invite Links (<code>/?invite=INV-...</code>)</h3>" +
+        '<p class="settings-desc">Share a clickable URL with friends that unlocks Ibossbad for a set duration without ever revealing your master passcode.</p>' +
+        '<div class="req-grid" style="margin-top:10px">' +
+        '<input id="invLabelInput" type="text" class="field-input" placeholder="Label (e.g. Period 3 Group)" />' +
+        '<input id="invHoursInput" type="number" class="field-input" value="12" min="1" placeholder="Hours" />' +
+        '<input id="invMaxUsesInput" type="number" class="field-input" value="5" min="1" placeholder="Max Clicks" />' +
+        '<button type="button" class="btn btn-primary" id="createInviteBtn">Create Invite Link</button>' +
+        "</div>" +
+        '<div style="margin-top:12px">' +
+        (invites.length === 0
+          ? '<div class="empty-bookmarks">No invite links created yet.</div>'
+          : invites
+              .map(function (inv) {
+                var fullUrl =
+                  window.location.origin +
+                  "/?invite=" +
+                  encodeURIComponent(inv.code);
+                var st = inv.revoked
+                  ? "REVOKED"
+                  : inv.expiresAt && Date.now() > inv.expiresAt
+                  ? "EXPIRED"
+                  : inv.uses + "/" + inv.maxUses + " clicks";
+                return (
+                  '<div class="ext-row"><div><code>' +
+                  esc(inv.code) +
+                  "</code> · " +
+                  esc(inv.label) +
+                  ' <span class="relay-mini-badge">' +
+                  esc(st) +
+                  "</span></div>" +
+                  '<div style="display:flex;gap:6px">' +
+                  '<button type="button" class="btn btn-secondary btn-xs" data-copy-key="' +
+                  esc(fullUrl) +
+                  '">Copy Link</button>' +
+                  (!inv.revoked
+                    ? '<button type="button" class="btn btn-danger btn-xs" data-revoke-inv="' +
+                      esc(inv.code) +
+                      '">Revoke</button>'
+                    : "") +
+                  "</div></div>"
+                );
+              })
+              .join("")) +
+        "</div></div>" +
         '<div class="internal-panel" style="margin-bottom:16px">' +
         "<h3>Temporary Access Keys (12h / 24h / 7d)</h3>" +
         '<div class="req-grid" style="margin-top:10px">' +
@@ -592,6 +638,23 @@
               })
               .join("")) +
         "</div></div>" +
+        '<div class="internal-panel" style="margin-bottom:16px">' +
+        "<h3>Login MOTD / What's New Popup Modal</h3>" +
+        '<p class="settings-desc">Shown once per update when users unlock the browser.</p>' +
+        '<div class="req-grid" style="margin-top:10px">' +
+        '<select id="motdEnabledSelect" class="field-select"><option value="off"' +
+        (!(s.config.motd && s.config.motd.enabled) ? " selected" : "") +
+        '>Disabled</option><option value="on"' +
+        (s.config.motd && s.config.motd.enabled ? " selected" : "") +
+        ">Enabled</option></select>" +
+        '<input id="motdTitleInput" type="text" class="field-input" placeholder="Announcement Title" value="' +
+        esc((s.config.motd && s.config.motd.title) || "What's New") +
+        '" />' +
+        '<input id="motdBodyInput" type="text" class="field-input" placeholder="Announcement text..." value="' +
+        esc((s.config.motd && s.config.motd.body) || "") +
+        '" />' +
+        '<button type="button" class="btn btn-primary" id="saveMotdBtn">Save MOTD</button>' +
+        "</div></div>" +
         '<div class="internal-panel">' +
         "<h3>Rotate Admin Password</h3>" +
         '<div class="req-grid" style="margin-top:10px">' +
@@ -661,6 +724,37 @@
           })
           .join("") +
         "</div></div>" +
+        '<div class="internal-panel" style="margin-bottom:16px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">' +
+        "<h3>Live Instance Chat Poll</h3>" +
+        (s.activePoll
+          ? '<button type="button" class="btn btn-danger btn-xs" id="admClosePollBtn">Close Active Poll</button>'
+          : "") +
+        "</div>" +
+        (s.activePoll
+          ? '<div style="margin-top:8px"><strong>' +
+            esc(s.activePoll.question) +
+            '</strong> <span class="relay-mini-badge">' +
+            s.activePoll.totalVotes +
+            " votes</span>" +
+            '<div style="margin-top:8px">' +
+            s.activePoll.options
+              .map(function (o) {
+                return (
+                  '<div class="ext-row"><span>' +
+                  esc(o.label) +
+                  "</span><strong>" +
+                  o.votes +
+                  " votes</strong></div>"
+                );
+              })
+              .join("") +
+            "</div></div>"
+          : '<div class="req-grid" style="margin-top:10px">' +
+            '<input id="pollQuestionInput" type="text" class="field-input" placeholder="Poll question (e.g. Which game should we feature?)" />' +
+            '<input id="pollOptionsInput" type="text" class="field-input" placeholder="Comma-separated options (e.g. PolyTrack, Slope 2, Celeste)" />' +
+            '<button type="button" class="btn btn-primary" id="admLaunchPollBtn">Launch Poll</button></div>') +
+        "</div>" +
         '<div class="internal-panel">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">' +
         "<h3>Instance Chat Moderation</h3>" +
@@ -1151,6 +1245,87 @@
           refreshSnapshot(container);
         });
       });
+
+      var createInvBtn = container.querySelector("#createInviteBtn");
+      if (createInvBtn) {
+        createInvBtn.addEventListener("click", async function () {
+          var r = await apiAdmin("/invites", "POST", {
+            label: container.querySelector("#invLabelInput").value,
+            durationHours: Number(
+              container.querySelector("#invHoursInput").value || 12
+            ),
+            maxUses: Number(
+              container.querySelector("#invMaxUsesInput").value || 5
+            ),
+          });
+          if (r.ok && r.data.invite) {
+            var link =
+              window.location.origin +
+              "/?invite=" +
+              encodeURIComponent(r.data.invite.code);
+            if (navigator.clipboard) navigator.clipboard.writeText(link);
+            hooks.toast("Created & copied invite link!");
+            refreshSnapshot(container);
+          }
+        });
+      }
+
+      container.querySelectorAll("[data-revoke-inv]").forEach(function (btn) {
+        btn.addEventListener("click", async function () {
+          await apiAdmin(
+            "/invites/" +
+              encodeURIComponent(btn.getAttribute("data-revoke-inv")),
+            "DELETE"
+          );
+          refreshSnapshot(container);
+        });
+      });
+
+      var saveMotdBtn = container.querySelector("#saveMotdBtn");
+      if (saveMotdBtn) {
+        saveMotdBtn.addEventListener("click", async function () {
+          await apiAdmin("/motd", "POST", {
+            enabled:
+              container.querySelector("#motdEnabledSelect").value === "on",
+            title: container.querySelector("#motdTitleInput").value,
+            body: container.querySelector("#motdBodyInput").value,
+          });
+          hooks.toast("MOTD announcement updated!");
+          refreshSnapshot(container);
+        });
+      }
+
+      var launchPollBtn = container.querySelector("#admLaunchPollBtn");
+      if (launchPollBtn) {
+        launchPollBtn.addEventListener("click", async function () {
+          var q = container.querySelector("#pollQuestionInput").value;
+          var opts = container
+            .querySelector("#pollOptionsInput")
+            .value.split(",")
+            .map(function (x) {
+              return x.trim();
+            })
+            .filter(Boolean);
+          var r = await apiAdmin("/poll", "POST", {
+            question: q,
+            options: opts,
+          });
+          if (!r.ok) {
+            hooks.toast((r.data && r.data.error) || "Need 2+ options.");
+            return;
+          }
+          hooks.toast("Live poll launched in Instance Chat!");
+          refreshSnapshot(container);
+        });
+      }
+
+      var closePollBtn = container.querySelector("#admClosePollBtn");
+      if (closePollBtn) {
+        closePollBtn.addEventListener("click", async function () {
+          await apiAdmin("/poll", "POST", { action: "close" });
+          refreshSnapshot(container);
+        });
+      }
     }
 
     function renderDashboard(container) {

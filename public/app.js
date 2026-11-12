@@ -137,13 +137,10 @@
   };
 
   const QUICK_LINKS = [
-    { title: "180+ Games Hub", url: "iboss://games", badge: "GM" },
-    { title: "Neal.fun", url: "https://neal.fun/", badge: "NF" },
-    {
-      title: "Infinite Craft",
-      url: "https://neal.fun/infinite-craft/",
-      badge: "IC",
-    },
+    { title: "200+ Games Hub", url: "iboss://games", badge: "GM" },
+    { title: "Media & Radio", url: "iboss://media", badge: "MD" },
+    { title: "Retro ROMs", url: "iboss://emulator", badge: "EM" },
+    { title: "1-Click Store", url: "iboss://store", badge: "ST" },
     { title: "YouTube", url: "https://www.youtube.com/", badge: "YT" },
     { title: "Discord", url: "https://discord.com/app", badge: "DC" },
     {
@@ -156,11 +153,6 @@
       url: "https://monkeygg2.github.io/games/slope/",
       badge: "SL",
     },
-    {
-      title: "Retro Bowl",
-      url: "https://monkeygg2.github.io/games/retro-bowl/",
-      badge: "RB",
-    },
   ];
 
   const DEFAULT_SETTINGS = {
@@ -169,6 +161,7 @@
     customIcon: "",
     panicKey: "`",
     panicUrl: "https://classroom.google.com",
+    decoyTemplate: "gdocs",
     searchEngine: "ddg",
     proxyEngine: "scramjet",
     bareTransport: "libcurl",
@@ -198,6 +191,7 @@
     camouflageServerEnabled: false,
     camoRevealed: false,
     lootlabs: { enabled: false, durationHours: 12 },
+    motd: null,
     chatEnabled: true,
     isAdmin: false,
     user: null,
@@ -213,6 +207,7 @@
     settings: loadJson(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS),
     bookmarks: loadJson(STORAGE_KEYS.BOOKMARKS, []),
     tabs: [],
+    closedTabs: [],
     activeTabId: null,
     nextTabNum: 1,
     wispStatus: { label: "Ready", latency: null, blockedCount: 0 },
@@ -223,6 +218,7 @@
 
   let scramjetEngine = null;
   let wispEngine = null;
+  let mediaEmulator = null;
   let internalPages = null;
   let adminPanel = null;
   let particlesActive = false;
@@ -595,6 +591,96 @@
     updateMuteButtonUI();
   }
 
+  function drawDesmosDecoyCanvas() {
+    const canvas = document.getElementById("desmosCanvas");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    const scale = 38;
+    const ox = w / 2;
+    const oy = h / 2;
+
+    ctx.strokeStyle = "#e2e8f0";
+    ctx.lineWidth = 1;
+    for (let x = ox % scale; x < w; x += scale) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, h);
+      ctx.stroke();
+    }
+    for (let y = oy % scale; y < h; y += scale) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = "#475569";
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(0, oy);
+    ctx.lineTo(w, oy);
+    ctx.moveTo(ox, 0);
+    ctx.lineTo(ox, h);
+    ctx.stroke();
+
+    const expr1 =
+      (document.getElementById("desmosFn1") &&
+        document.getElementById("desmosFn1").value) ||
+      "Math.sin(x)*2";
+    const expr2 =
+      (document.getElementById("desmosFn2") &&
+        document.getElementById("desmosFn2").value) ||
+      "0.25*x*x-3";
+
+    [
+      { expr: expr1, color: "#c74440" },
+      { expr: expr2, color: "#2d70b3" },
+    ].forEach((fn) => {
+      try {
+        // eslint-disable-next-line no-new-func
+        const evaluator = new Function("x", "return (" + fn.expr + ");");
+        ctx.strokeStyle = fn.color;
+        ctx.lineWidth = 2.6;
+        ctx.beginPath();
+        let started = false;
+        for (let px = 0; px < w; px += 2) {
+          const x = (px - ox) / scale;
+          const y = Number(evaluator(x));
+          if (!Number.isFinite(y)) {
+            started = false;
+            continue;
+          }
+          const py = oy - y * scale;
+          if (!started) {
+            ctx.moveTo(px, py);
+            started = true;
+          } else {
+            ctx.lineTo(px, py);
+          }
+        }
+        ctx.stroke();
+      } catch (_e) {}
+    });
+  }
+
+  function syncDecoyTemplateView() {
+    const activeTpl = state.settings.decoyTemplate || "gdocs";
+    document.querySelectorAll("[data-decoy-view]").forEach((el) => {
+      el.classList.toggle(
+        "hidden",
+        el.getAttribute("data-decoy-view") !== activeTpl
+      );
+    });
+    document.querySelectorAll(".decoy-switcher").forEach((sel) => {
+      sel.value = activeTpl;
+    });
+    if (activeTpl === "desmos") {
+      drawDesmosDecoyCanvas();
+    }
+  }
+
   function setDecoyOverlay(active) {
     state.decoyActive = Boolean(active);
     const el = document.getElementById("decoyOverlay");
@@ -602,7 +688,11 @@
       el.classList.toggle("hidden", !state.decoyActive);
     }
     if (state.decoyActive) {
+      syncDecoyTemplateView();
       state.tabs.forEach((t) => setTabAudioMuted(t, true));
+      if (mediaEmulator) {
+        mediaEmulator.pauseRadioForBossKey();
+      }
     }
     applyCloak();
   }
@@ -830,12 +920,18 @@
     return state.tabs.find((t) => t.id === state.activeTabId) || null;
   }
 
+  function sortTabsPinnedFirst() {
+    state.tabs.sort(
+      (a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned))
+    );
+  }
+
   function persistOpenTabs() {
     if (state.settings.ramSaver === false) return;
-    const urls = state.tabs
-      .map((t) => t.url)
-      .filter((u) => u && !/^javascript:/i.test(u));
-    saveJson(STORAGE_KEYS.OPEN_TABS, urls.slice(0, 12));
+    const saved = state.tabs
+      .filter((t) => t.url && !/^javascript:/i.test(t.url))
+      .map((t) => ({ url: t.url, pinned: Boolean(t.pinned) }));
+    saveJson(STORAGE_KEYS.OPEN_TABS, saved.slice(0, 14));
   }
 
   function tearDownAllTabs() {
@@ -850,12 +946,13 @@
     createTab("", true);
   }
 
-  function createTab(initialUrl, switchImmediately) {
+  function createTab(initialUrl, switchImmediately, isPinned) {
     const id = "tab-" + state.nextTabNum++;
     const tab = {
       id: id,
       title: "New Tab",
       url: "",
+      pinned: Boolean(isPinned),
       iframe: null,
       blobUrl: null,
       history: [],
@@ -866,6 +963,7 @@
       lastActiveTs: Date.now(),
     };
     state.tabs.push(tab);
+    sortTabsPinnedFirst();
 
     if (switchImmediately !== false) {
       state.activeTabId = id;
@@ -1164,7 +1262,15 @@
   function closeTab(tabId) {
     const idx = state.tabs.findIndex((t) => t.id === tabId);
     if (idx === -1) return;
+    if (state.tabs[idx].pinned) {
+      showToast("Unpin tab first before closing.");
+      return;
+    }
     const [removed] = state.tabs.splice(idx, 1);
+    if (removed.url) {
+      state.closedTabs.unshift({ url: removed.url, title: removed.title });
+      if (state.closedTabs.length > 15) state.closedTabs.length = 15;
+    }
     if (scramjetEngine) {
       scramjetEngine.destroyTabFrame(tabId);
     }
@@ -1188,6 +1294,26 @@
     renderTabs();
     updateViewportForActiveTab();
     persistOpenTabs();
+  }
+
+  function reopenClosedTab() {
+    const entry = state.closedTabs.shift();
+    if (!entry || !entry.url) {
+      showToast("No recently closed tabs to reopen.");
+      return;
+    }
+    createTab(entry.url, true);
+    showToast("Reopened: " + (entry.title || entry.url));
+  }
+
+  function togglePinTab(tabId) {
+    const tab = state.tabs.find((t) => t.id === tabId);
+    if (!tab) return;
+    tab.pinned = !tab.pinned;
+    sortTabsPinnedFirst();
+    renderTabs();
+    persistOpenTabs();
+    showToast(tab.pinned ? "Pinned tab" : "Unpinned tab");
   }
 
   function switchTab(tabId) {
@@ -1300,8 +1426,11 @@
     state.tabs.forEach((tab) => {
       const el = document.createElement("div");
       el.className =
-        "browser-tab" + (tab.id === state.activeTabId ? " active" : "");
+        "browser-tab tab-item" +
+        (tab.id === state.activeTabId ? " active" : "") +
+        (tab.pinned ? " pinned" : "");
       el.setAttribute("role", "tab");
+      el.title = (tab.title || "New Tab") + " (Right-click to Pin/Unpin)";
 
       const badge = document.createElement("span");
       badge.className = "tab-favicon";
@@ -1320,20 +1449,38 @@
       title.className = "tab-title";
       title.textContent = tab.title || "New Tab";
 
-      const close = document.createElement("button");
-      close.type = "button";
-      close.className = "tab-close";
-      close.title = "Close Tab";
-      close.textContent = "×";
-      close.addEventListener("click", (ev) => {
+      const pinBtn = document.createElement("button");
+      pinBtn.type = "button";
+      pinBtn.className = "tab-pin-btn";
+      pinBtn.title = tab.pinned ? "Unpin Tab" : "Pin Tab";
+      pinBtn.textContent = "📌";
+      pinBtn.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        closeTab(tab.id);
+        togglePinTab(tab.id);
       });
 
+      el.addEventListener("contextmenu", (ev) => {
+        ev.preventDefault();
+        togglePinTab(tab.id);
+      });
       el.addEventListener("click", () => switchTab(tab.id));
       el.appendChild(badge);
       el.appendChild(title);
-      el.appendChild(close);
+      el.appendChild(pinBtn);
+
+      if (!tab.pinned) {
+        const close = document.createElement("button");
+        close.type = "button";
+        close.className = "tab-close";
+        close.title = "Close Tab";
+        close.textContent = "×";
+        close.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          closeTab(tab.id);
+        });
+        el.appendChild(close);
+      }
+
       container.appendChild(el);
     });
   }
@@ -1762,7 +1909,27 @@
     updateAccountBadge();
   }
 
+  function maybeShowMotdModal() {
+    if (
+      !state.authenticated ||
+      !state.motd ||
+      !state.motd.enabled ||
+      !state.motd.body
+    ) {
+      return;
+    }
+    const seenId = localStorage.getItem("ibossbad_ack_motd_v1");
+    if (seenId === String(state.motd.id)) return;
+    const modal = document.getElementById("motdModal");
+    if (!modal) return;
+    document.getElementById("motdModalTitle").textContent =
+      state.motd.title || "Announcement";
+    document.getElementById("motdModalBody").textContent = state.motd.body;
+    modal.classList.remove("hidden");
+  }
+
   function handlePostUnlockRedirect() {
+    maybeShowMotdModal();
     const params = new URLSearchParams(window.location.search);
     const pendingUrl = params.get("url");
     if (params.get("key_claimed") === "1") {
@@ -2041,6 +2208,48 @@
       const r = await fetch("/api/chat");
       const d = await r.json();
       const list = document.getElementById("chatMessagesList");
+      const pollBox = document.getElementById("chatPollBox");
+
+      if (pollBox) {
+        if (d.poll && d.poll.options) {
+          const safeQ = String(d.poll.question || "").replace(/</g, "&lt;");
+          pollBox.innerHTML =
+            "<div><strong>📊 " +
+            safeQ +
+            '</strong> <span class="relay-mini-badge">' +
+            d.poll.totalVotes +
+            " votes</span></div>" +
+            d.poll.options
+              .map(
+                (o) =>
+                  '<button type="button" class="poll-opt-btn" data-vote-opt="' +
+                  o.id +
+                  '"><span>' +
+                  String(o.label).replace(/</g, "&lt;") +
+                  "</span><strong>" +
+                  o.votes +
+                  "</strong></button>"
+              )
+              .join("");
+          pollBox.classList.remove("hidden");
+          pollBox.querySelectorAll("[data-vote-opt]").forEach((b) => {
+            b.addEventListener("click", async () => {
+              await fetch("/api/chat/vote", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  optionId: b.getAttribute("data-vote-opt"),
+                }),
+              });
+              refreshChatMessages();
+            });
+          });
+        } else {
+          pollBox.classList.add("hidden");
+          pollBox.innerHTML = "";
+        }
+      }
+
       if (!d.enabled) {
         list.innerHTML =
           '<div class="empty-bookmarks">Chat is currently disabled by Admin.</div>';
@@ -2169,6 +2378,10 @@
       state.settings.panicKey || "`";
     document.getElementById("panicUrlInput").value =
       state.settings.panicUrl || "https://classroom.google.com";
+    const decoySel = document.getElementById("decoyTemplateSelect");
+    if (decoySel) {
+      decoySel.value = state.settings.decoyTemplate || "gdocs";
+    }
     document.getElementById("hkGamesInput").value =
       state.settings.hkGames || "Alt+G";
     document.getElementById("hkSplitInput").value =
@@ -2265,6 +2478,10 @@
     state.settings.panicUrl =
       document.getElementById("panicUrlInput").value.trim() ||
       "https://classroom.google.com";
+    const decoySel = document.getElementById("decoyTemplateSelect");
+    if (decoySel) {
+      state.settings.decoyTemplate = decoySel.value || "gdocs";
+    }
     state.settings.hkGames =
       document.getElementById("hkGamesInput").value.trim() || "Alt+G";
     state.settings.hkSplit =
@@ -2311,6 +2528,36 @@
       window.IbossExtensions.syncFpsHud();
     }
 
+    if (window.IbossMediaEmulator) {
+      mediaEmulator = window.IbossMediaEmulator.create({
+        navigate: (url) => {
+          const tab = getActiveTab() || createTab("", true);
+          navigateTab(tab, url, true);
+        },
+        openInNewTab: (url) => createTab(url, true),
+        openMiniPlayer: openMiniPlayer,
+        buildProxiedUrl: (targetUrl) =>
+          state.settings.proxyEngine === "scramjet" && scramjetEngine
+            ? scramjetEngine.encodeUrl(targetUrl)
+            : buildProxiedPath(targetUrl),
+        toast: showToast,
+        onRadioStateChange: (radioSt) => {
+          const bar = document.getElementById("radioMiniBar");
+          if (!bar) return;
+          if (!radioSt || !radioSt.station) {
+            bar.classList.add("hidden");
+            return;
+          }
+          bar.classList.remove("hidden");
+          document.getElementById("radioNowPlaying").textContent =
+            "🎵 " + radioSt.station.name + " · " + radioSt.station.genre;
+          document.getElementById(
+            "radioPlayPauseBtn"
+          ).textContent = radioSt.playing ? "Pause" : "Resume";
+        },
+      });
+    }
+
     if (window.IbossInternalPages) {
       internalPages = window.IbossInternalPages.create({
         navigate: (url) => {
@@ -2322,6 +2569,23 @@
         getCustomGames: () => state.customGames,
         pushGameSavesToCloud: (savesObj) => pushToCloud(savesObj),
         pullGameSavesFromCloud: () => syncFromCloud(true),
+        mediaEmulator: mediaEmulator,
+        runScriptInOtherTab: (code, modName) => {
+          const target = state.tabs.find(
+            (t) => t.iframe && t.url && !isInternalUrl(t.url)
+          );
+          if (!target || !target.iframe || !target.iframe.contentWindow) {
+            showToast("Open a website or game tab first, then click Run!");
+            return;
+          }
+          try {
+            target.iframe.contentWindow.eval(code);
+            switchTab(target.id);
+            showToast("Launched " + modName + "!");
+          } catch (err) {
+            showToast("Failed to inject: " + (err.message || err));
+          }
+        },
         toast: showToast,
       });
     }
@@ -2421,8 +2685,23 @@
     renderQuickLinks();
     renderBookmarks();
 
-    // Fetch backend status & restore tabs if unlocked
+    // Fetch backend status, redeem ?invite= links & restore tabs if unlocked
     try {
+      const bootParams = new URLSearchParams(window.location.search);
+      const inviteParam = bootParams.get("invite");
+      if (inviteParam) {
+        const invRes = await fetch("/api/auth/invite", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code: inviteParam }),
+        });
+        const invData = await invRes.json();
+        window.history.replaceState({}, "", "/");
+        if (invRes.ok && invData.ok) {
+          showToast("Invite link accepted! Browser unlocked.");
+        }
+      }
+
       const res = await fetch("/api/status");
       const status = await res.json();
       state.authenticated = Boolean(status.authenticated);
@@ -2430,6 +2709,7 @@
       state.passcodeEnabled = Boolean(status.passcodeEnabled);
       state.camouflageServerEnabled = Boolean(status.camouflage);
       state.lootlabs = status.lootlabs || { enabled: false };
+      state.motd = status.motd || null;
       state.chatEnabled = status.chatEnabled !== false;
       state.isAdmin = Boolean(status.isAdmin);
       state.prefix = status.prefix || "/proxy/";
@@ -2469,7 +2749,13 @@
         }
         const savedTabs = loadJson(STORAGE_KEYS.OPEN_TABS, []);
         if (state.settings.ramSaver !== false && savedTabs.length > 0) {
-          savedTabs.forEach((u, i) => createTab(u, i === 0));
+          savedTabs.forEach((entry, i) => {
+            if (typeof entry === "string") {
+              createTab(entry, i === 0, false);
+            } else if (entry && entry.url) {
+              createTab(entry.url, i === 0, Boolean(entry.pinned));
+            }
+          });
         } else {
           createTab("", true);
         }
@@ -2598,6 +2884,60 @@
       const tab = getActiveTab() || createTab("", true);
       navigateTab(tab, "iboss://games", true);
     });
+
+    const mediaHubBtn = document.getElementById("mediaHubBtn");
+    if (mediaHubBtn) {
+      mediaHubBtn.addEventListener("click", () => {
+        const tab = getActiveTab() || createTab("", true);
+        navigateTab(tab, "iboss://media", true);
+      });
+    }
+
+    const desktopModeBtn = document.getElementById("desktopModeBtn");
+    if (desktopModeBtn) {
+      desktopModeBtn.addEventListener("click", () => {
+        const tab = getActiveTab() || createTab("", true);
+        navigateTab(tab, "iboss://desktop", true);
+      });
+    }
+
+    const radioPlayPauseBtn = document.getElementById("radioPlayPauseBtn");
+    if (radioPlayPauseBtn) {
+      radioPlayPauseBtn.addEventListener("click", () => {
+        if (mediaEmulator) mediaEmulator.toggleRadioPlayPause();
+      });
+    }
+
+    const radioStopBtn = document.getElementById("radioStopBtn");
+    if (radioStopBtn) {
+      radioStopBtn.addEventListener("click", () => {
+        if (mediaEmulator) mediaEmulator.stopRadio();
+      });
+    }
+
+    document.querySelectorAll(".decoy-switcher").forEach((sel) => {
+      sel.addEventListener("change", (ev) => {
+        state.settings.decoyTemplate = ev.target.value;
+        saveJson(STORAGE_KEYS.SETTINGS, state.settings);
+        syncDecoyTemplateView();
+      });
+    });
+
+    const desmosPlotBtn = document.getElementById("desmosPlotBtn");
+    if (desmosPlotBtn) {
+      desmosPlotBtn.addEventListener("click", drawDesmosDecoyCanvas);
+    }
+
+    const ackMotd = () => {
+      if (state.motd && state.motd.id) {
+        localStorage.setItem("ibossbad_ack_motd_v1", String(state.motd.id));
+      }
+      document.getElementById("motdModal").classList.add("hidden");
+    };
+    const closeMotdBtn = document.getElementById("closeMotdBtn");
+    const ackMotdBtn = document.getElementById("ackMotdBtn");
+    if (closeMotdBtn) closeMotdBtn.addEventListener("click", ackMotd);
+    if (ackMotdBtn) ackMotdBtn.addEventListener("click", ackMotd);
 
     document.getElementById("adminNavBtn").addEventListener("click", () => {
       const tab = getActiveTab() || createTab("", true);
@@ -2953,7 +3293,18 @@
         return;
       }
 
-      if (ev.altKey && (ev.key === "t" || ev.key === "T")) {
+      // Reopen Recently Closed Tab: Ctrl+Shift+T or Alt+Shift+T
+      if (
+        (ev.ctrlKey || ev.altKey) &&
+        ev.shiftKey &&
+        (ev.key === "T" || ev.key === "t")
+      ) {
+        ev.preventDefault();
+        reopenClosedTab();
+        return;
+      }
+
+      if (ev.altKey && !ev.shiftKey && (ev.key === "t" || ev.key === "T")) {
         ev.preventDefault();
         createTab("", true);
         return;
