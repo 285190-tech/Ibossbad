@@ -4,7 +4,7 @@ var http = require("http");
 var Unblocker = require("../../lib/unblocker.js");
 
 var unblocker = Unblocker({
-  host: "proxy-c73q.onrender.com"
+  host: "ibossbad.onrender.com"
 });
 
 var server = http
@@ -18,7 +18,7 @@ var server = http
       if (req.url == "/") {
         res.writeHead(200, headers);
         return res.end(
-          "Use the format https://proxy-c73q.onrender.com/proxy/https://example.com/ to access the proxy."
+          "Use the format https://ibossbad.onrender.com/proxy/https://example.com/ to access the proxy."
         );
       } else {
         res.writeHead(404, headers);
