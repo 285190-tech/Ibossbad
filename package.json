@@ -1,19 +1,23 @@
 {
   "name": "unblocker",
-  "description": "Web proxy for evading internet censorship & general-purpose library for rewriting remote websites.",
+  "description": "Ibossbad — Web proxy & stealth browser powered by Node Unblocker.",
   "author": "Nathan Friedly - http://nfriedly.com",
-  "version": "2.3.0",
-  "repository": "git://github.com/nfriedly/node-unblocker.git",
+  "version": "2.4.0",
+  "repository": "git://github.com/285190-tech/Ibossbad.git",
   "engines": {
-    "node": ">=6"
+    "node": ">=14.0.0"
   },
   "dependencies": {
+    "@mercuryworkshop/wisp-js": "^0.5.3",
+    "acorn": "^8.19.0",
+    "acorn-walk": "^8.3.5",
     "async": "^3.1.0",
     "content-type": "^1.0.4",
     "cookie": "^0.4.0",
     "debug": "^4.1.1",
     "express": "^4.17.1",
     "iconv-lite": "^0.6.2",
+    "libcurl.js": "^0.7.5",
     "lodash": "^4.17.15",
     "mime": "^2.4.4",
     "send": "^0.17.1",
@@ -34,6 +38,7 @@
     "ws": "^7.4.4"
   },
   "scripts": {
+    "start": "node server.js",
     "watch": "nodemon --watch ./ --ignore ./examples --ext js,html,xhtml,json --exec npm run test",
     "test": "npm run lint && npm run test-spec",
     "pre-commit": "npm run autofix && npm test",
@@ -46,6 +51,8 @@
   "main": "lib/unblocker.js",
   "files": [
     "lib/",
+    "public/",
+    "server.js",
     "examples/"
   ]
 }

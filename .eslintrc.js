@@ -11,13 +11,7 @@ module.exports = {
     es6: true,
   },
   rules: {
-    // todo: enable these
-    //"no-var": "error",
-    //"prefer-const": "error",
     strict: "error",
-    // 'url.parse' was deprecated in v11, but this lib supports v6+ and the replacement, URL, was only standardized in v10
-    // next major release will include a bump of the minimum node.js version, allowing the use of URL and resolving
-    // alternatively, we could use https://www.npmjs.com/package/url to avoid the deprecated api but maintain backwards compatibility
     "node/no-deprecated-api": "warn",
   },
   overrides: [
@@ -25,6 +19,20 @@ module.exports = {
       files: ["examples/*/*.js"],
       rules: {
         "node/no-missing-require": "off",
+        "node/no-unpublished-require": "off",
+      },
+    },
+    {
+      files: ["public/**/*.js"],
+      env: {
+        node: false,
+        browser: true,
+        es6: true,
+      },
+      rules: {
+        "no-empty": ["error", { allowEmptyCatch: true }],
+        "node/no-unsupported-features/es-syntax": "off",
+        "node/no-unsupported-features/node-builtins": "off",
       },
     },
     {
