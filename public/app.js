@@ -104,12 +104,12 @@
       url: "https://neal.fun/infinite-craft/",
       badge: "IC",
     },
+    { title: "YouTube", url: "https://www.youtube.com/", badge: "YT" },
+    { title: "Discord", url: "https://discord.com/app", badge: "DC" },
     { title: "DuckDuckGo", url: "https://duckduckgo.com/", badge: "DD" },
+    { title: "Poki Games", url: "https://poki.com/", badge: "PK" },
     { title: "Wikipedia", url: "https://en.wikipedia.org/", badge: "W" },
     { title: "2048", url: "https://play2048.co/", badge: "20" },
-    { title: "Poki Games", url: "https://poki.com/", badge: "PK" },
-    { title: "Hacker News", url: "https://news.ycombinator.com/", badge: "HN" },
-    { title: "GitHub", url: "https://github.com/", badge: "GH" },
   ];
 
   const DEFAULT_SETTINGS = {
@@ -119,7 +119,8 @@
     panicKey: "`",
     panicUrl: "https://classroom.google.com",
     searchEngine: "ddg",
-    proxyEngine: "wisp", // "wisp" (GUST WASM + WISP) or "stream" (/proxy/)
+    proxyEngine: "scramjet", // "scramjet" (SW + WISP), "wisp" (GUST Blob WISP), or "stream" (/proxy/)
+    bareTransport: "libcurl", // "libcurl" or "epoxy"
     wispPreset: "auto", // "auto", "self", "wss://...", or "custom"
     customWispUrl: "",
     shieldEnabled: true,
@@ -146,6 +147,7 @@
 
   state.settings = Object.assign({}, DEFAULT_SETTINGS, state.settings || {});
 
+  let scramjetEngine = null;
   let wispEngine = null;
 
   function loadJson(key, fallback) {
@@ -242,7 +244,6 @@
   }
 
   function applyWispConfiguration() {
-    if (!wispEngine) return;
     const preset = state.settings.wispPreset || "auto";
     let customUrl = "";
     let allowPool = true;
@@ -258,12 +259,22 @@
       allowPool = false;
     }
 
-    wispEngine.configure({
-      customWispUrl: customUrl,
-      allowPoolFailover: allowPool,
-      adblockEnabled: state.settings.shieldEnabled !== false,
-      blockWebrtc: state.settings.shieldEnabled !== false,
-    });
+    if (scramjetEngine) {
+      scramjetEngine.configure({
+        customWispUrl: customUrl,
+        allowPoolFailover: allowPool,
+        bareTransport: state.settings.bareTransport || "libcurl",
+        shieldEnabled: state.settings.shieldEnabled !== false,
+      });
+    }
+    if (wispEngine) {
+      wispEngine.configure({
+        customWispUrl: customUrl,
+        allowPoolFailover: allowPool,
+        adblockEnabled: state.settings.shieldEnabled !== false,
+        blockWebrtc: state.settings.shieldEnabled !== false,
+      });
+    }
     updateTransportPill();
   }
 
@@ -276,11 +287,16 @@
     if (label) {
       if (state.settings.proxyEngine === "stream") {
         label.textContent = "Stream (/proxy/)";
+      } else if (state.settings.proxyEngine === "wisp") {
+        const ms = state.wispStatus.latency
+          ? " · " + state.wispStatus.latency + "ms"
+          : "";
+        label.textContent = "GUST WISP" + ms;
       } else {
         const ms = state.wispStatus.latency
           ? " · " + state.wispStatus.latency + "ms"
           : "";
-        label.textContent = "WISP" + ms;
+        label.textContent = "Scramjet" + ms;
       }
     }
     if (relayBadge) {
@@ -375,7 +391,9 @@
       const engLabel =
         state.settings.proxyEngine === "stream"
           ? "Server Stream"
-          : "WISP + WASM TLS";
+          : state.settings.proxyEngine === "wisp"
+          ? "GUST Blob WISP"
+          : "Scramjet + WISP";
       statusText.textContent =
         engLabel +
         " · Cloak: " +
@@ -685,8 +703,8 @@
     renderTabs();
     updateViewportForActiveTab();
 
-    // Classic Server Stream (/proxy/) engine
-    if (state.settings.proxyEngine === "stream" || !wispEngine) {
+    // 1) Classic Server Stream (/proxy/) engine
+    if (state.settings.proxyEngine === "stream") {
       if (tab.blobUrl) {
         URL.revokeObjectURL(tab.blobUrl);
         tab.blobUrl = null;
@@ -695,7 +713,59 @@
       return;
     }
 
-    // GUST WISP + WASM libcurl engine
+    // 2) Flagship Scramjet Service Worker + BareMux WISP engine (with automatic GUST fallback)
+    if (state.settings.proxyEngine === "scramjet" && scramjetEngine) {
+      if (tab.id === state.activeTabId) {
+        setLoadingProgress(true, "Starting Scramjet...");
+      }
+      try {
+        if (tab.blobUrl) {
+          URL.revokeObjectURL(tab.blobUrl);
+          tab.blobUrl = null;
+        }
+        await scramjetEngine.navigateTabFrame(
+          tab.id,
+          iframe,
+          resolved,
+          (stage) => {
+            if (tab.id === state.activeTabId && tab.navToken === myToken) {
+              setLoadingProgress(true, stage);
+            }
+          }
+        );
+        const onLoadedOnce = () => {
+          iframe.removeEventListener("load", onLoadedOnce);
+          if (tab.id === state.activeTabId && tab.navToken === myToken) {
+            setLoadingProgress(false, "");
+          }
+        };
+        iframe.addEventListener("load", onLoadedOnce);
+        return;
+      } catch (sjErr) {
+        if (!wispEngine) {
+          if (tab.id === state.activeTabId && tab.navToken === myToken) {
+            setLoadingProgress(false, "");
+          }
+          tab.blobUrl = buildErrorBlobUrl(
+            resolved,
+            (sjErr && sjErr.message) || "Scramjet initialization failed",
+            tab.id
+          );
+          iframe.src = tab.blobUrl;
+          return;
+        }
+        showToast(
+          "Service Worker restricted — switched to SW-free GUST WISP fallback"
+        );
+      }
+    }
+
+    // 3) SW-Free GUST Blob WISP + WASM libcurl engine
+    if (!wispEngine) {
+      iframe.src = buildProxiedPath(resolved);
+      return;
+    }
+
     if (tab.id === state.activeTabId) {
       setLoadingProgress(true, "Connecting via WISP...");
     }
@@ -744,6 +814,9 @@
     const idx = state.tabs.findIndex((t) => t.id === tabId);
     if (idx === -1) return;
     const [removed] = state.tabs.splice(idx, 1);
+    if (scramjetEngine) {
+      scramjetEngine.destroyTabFrame(tabId);
+    }
     if (removed.blobUrl) {
       URL.revokeObjectURL(removed.blobUrl);
     }
@@ -1090,6 +1163,7 @@
       state.user = data.user;
       document.getElementById("passcodeInput").value = "";
       refreshGateVisibility();
+      if (scramjetEngine) scramjetEngine.reconnect().catch(() => {});
       if (wispEngine) wispEngine.reconnect().catch(() => {});
       handlePostUnlockRedirect();
       showToast("Browser unlocked");
@@ -1192,6 +1266,7 @@
       state.user = sessionObj.user;
       document.getElementById("authPassword").value = "";
       refreshGateVisibility();
+      if (scramjetEngine) scramjetEngine.reconnect().catch(() => {});
       if (wispEngine) wispEngine.reconnect().catch(() => {});
       await syncFromCloud();
       await pushToCloud();
@@ -1252,7 +1327,9 @@
     });
 
     document.getElementById("proxyEngineSelect").value =
-      state.settings.proxyEngine || "wisp";
+      state.settings.proxyEngine || "scramjet";
+    document.getElementById("bareTransportSelect").value =
+      state.settings.bareTransport || "libcurl";
     document.getElementById("wispPresetSelect").value =
       state.settings.wispPreset || "auto";
     document
@@ -1323,7 +1400,9 @@
 
   function saveSettingsFromModal() {
     state.settings.proxyEngine =
-      document.getElementById("proxyEngineSelect").value || "wisp";
+      document.getElementById("proxyEngineSelect").value || "scramjet";
+    state.settings.bareTransport =
+      document.getElementById("bareTransportSelect").value || "libcurl";
     state.settings.wispPreset =
       document.getElementById("wispPresetSelect").value || "auto";
     state.settings.customWispUrl = document
@@ -1356,11 +1435,48 @@
     updateClock();
     setInterval(updateClock, 10000);
 
+    if (window.IbossScramjetEngine) {
+      scramjetEngine = window.IbossScramjetEngine.create({
+        onStatus: (st) => {
+          if (state.settings.proxyEngine === "scramjet") {
+            state.wispStatus = st;
+            updateTransportPill();
+          }
+        },
+        onRequestLog: (entry) => {
+          appendInspectorLog(entry);
+        },
+        onPageUpdate: (tabId, url, title) => {
+          const targetTab = state.tabs.find((t) => t.id === tabId);
+          if (!targetTab) return;
+          if (url && /^https?:\/\//i.test(url)) {
+            targetTab.url = url;
+          }
+          if (title) {
+            targetTab.title = title;
+          } else if (url && !targetTab.title) {
+            targetTab.title = getDomain(url);
+          }
+          renderTabs();
+          if (targetTab.id === state.activeTabId) {
+            updateOmniboxForTab(targetTab);
+          }
+        },
+        onSubframeKeydown: (key) => {
+          if (state.settings.panicKey && key === state.settings.panicKey) {
+            triggerPanic();
+          }
+        },
+      });
+    }
+
     if (window.IbossWispEngine) {
       wispEngine = window.IbossWispEngine.create({
         onStatus: (st) => {
-          state.wispStatus = st;
-          updateTransportPill();
+          if (state.settings.proxyEngine === "wisp") {
+            state.wispStatus = st;
+            updateTransportPill();
+          }
         },
         onRequestLog: (entry) => {
           appendInspectorLog(entry);
@@ -1432,7 +1548,9 @@
 
       refreshGateVisibility();
       if (state.authenticated) {
-        if (wispEngine && state.settings.proxyEngine === "wisp") {
+        if (scramjetEngine && state.settings.proxyEngine === "scramjet") {
+          scramjetEngine.ensureReady().catch(() => {});
+        } else if (wispEngine && state.settings.proxyEngine === "wisp") {
           wispEngine.ensureConnected().catch(() => {});
         }
         if (state.user && state.user.mode === "supabase") {
@@ -1511,6 +1629,15 @@
     document.getElementById("backBtn").addEventListener("click", () => {
       const tab = getActiveTab();
       if (!tab) return;
+      if (state.settings.proxyEngine === "scramjet" && scramjetEngine) {
+        const sjFrame = scramjetEngine.getTabFrame(tab.id);
+        if (sjFrame) {
+          try {
+            sjFrame.back();
+            return;
+          } catch (_e) {}
+        }
+      }
       if (tab.historyIdx > 0) {
         tab.historyIdx--;
         navigateTab(tab, tab.history[tab.historyIdx], false);
@@ -1528,6 +1655,15 @@
     document.getElementById("forwardBtn").addEventListener("click", () => {
       const tab = getActiveTab();
       if (!tab) return;
+      if (state.settings.proxyEngine === "scramjet" && scramjetEngine) {
+        const sjFrame = scramjetEngine.getTabFrame(tab.id);
+        if (sjFrame) {
+          try {
+            sjFrame.forward();
+            return;
+          } catch (_e) {}
+        }
+      }
       if (tab.historyIdx < tab.history.length - 1) {
         tab.historyIdx++;
         navigateTab(tab, tab.history[tab.historyIdx], false);
@@ -1544,9 +1680,17 @@
 
     document.getElementById("reloadBtn").addEventListener("click", () => {
       const tab = getActiveTab();
-      if (tab && tab.url) {
-        navigateTab(tab, tab.url, false);
+      if (!tab || !tab.url) return;
+      if (state.settings.proxyEngine === "scramjet" && scramjetEngine) {
+        const sjFrame = scramjetEngine.getTabFrame(tab.id);
+        if (sjFrame) {
+          try {
+            sjFrame.reload();
+            return;
+          } catch (_e) {}
+        }
       }
+      navigateTab(tab, tab.url, false);
     });
 
     document.getElementById("homeBtn").addEventListener("click", () => {
@@ -1555,6 +1699,9 @@
       tab.navToken++;
       tab.url = "";
       tab.title = "New Tab";
+      if (scramjetEngine) {
+        scramjetEngine.destroyTabFrame(tab.id);
+      }
       if (tab.blobUrl) {
         URL.revokeObjectURL(tab.blobUrl);
         tab.blobUrl = null;
@@ -1605,7 +1752,11 @@
     document.getElementById("openDirectBtn").addEventListener("click", () => {
       const tab = getActiveTab();
       if (tab && tab.url) {
-        window.open(buildProxiedPath(tab.url), "_blank");
+        const directHref =
+          state.settings.proxyEngine === "scramjet" && scramjetEngine
+            ? scramjetEngine.encodeUrl(tab.url)
+            : buildProxiedPath(tab.url);
+        window.open(directHref, "_blank");
       } else {
         showToast("Open a site first to pop it out.");
       }
