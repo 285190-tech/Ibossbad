@@ -175,25 +175,145 @@ test("Ibossbad web app, passcode gate, token session, and authenticated proxying
                                   "serves local libcurl.js bundle"
                                 );
 
-                                // 8. Authenticated WebSocket upgrade to /wisp/ succeeds
-                                var ws = new WebSocket(
-                                  "ws://127.0.0.1:" + appPort + "/wisp/",
-                                  {
-                                    headers: { Cookie: cookieHeader },
+                                // 8. Serves Scramjet SW, BareMux & WASM TLS transports
+                                httpJson(
+                                  appPort,
+                                  "GET",
+                                  "/sw.js",
+                                  null,
+                                  {},
+                                  function (errSw, resSw, _jSw, swSrc) {
+                                    t.error(errSw);
+                                    t.equal(resSw.statusCode, 200);
+                                    t.equal(
+                                      resSw.headers["service-worker-allowed"],
+                                      "/",
+                                      "sets Service-Worker-Allowed: / on /sw.js"
+                                    );
+                                    t.ok(
+                                      swSrc.includes("$scramjetLoadWorker"),
+                                      "serves Scramjet Service Worker script"
+                                    );
+
+                                    httpJson(
+                                      appPort,
+                                      "GET",
+                                      "/scram/scramjet.all.js",
+                                      null,
+                                      {},
+                                      function (errSj, resSj, _jSj, sjSrc) {
+                                        t.error(errSj);
+                                        t.equal(resSj.statusCode, 200);
+                                        t.ok(
+                                          sjSrc.length > 1000,
+                                          "serves @mercuryworkshop/scramjet bundle"
+                                        );
+
+                                        httpJson(
+                                          appPort,
+                                          "GET",
+                                          "/baremux/index.js",
+                                          null,
+                                          {},
+                                          function (errBm, resBm, _jBm, bmSrc) {
+                                            t.error(errBm);
+                                            t.equal(resBm.statusCode, 200);
+                                            t.ok(
+                                              bmSrc.includes("BareMux"),
+                                              "serves @mercuryworkshop/bare-mux bundle"
+                                            );
+
+                                            httpJson(
+                                              appPort,
+                                              "GET",
+                                              "/libcurl/index.mjs?v=2",
+                                              null,
+                                              {},
+                                              function (
+                                                errLc,
+                                                resLc,
+                                                _jLc,
+                                                lcSrc
+                                              ) {
+                                                t.error(errLc);
+                                                t.equal(
+                                                  resLc.statusCode,
+                                                  200,
+                                                  "serves libcurl-transport"
+                                                );
+                                                t.ok(
+                                                  lcSrc.includes(
+                                                    "wasmInitPromise = libcurl.load_wasm()"
+                                                  ),
+                                                  "patches LibcurlClient.init to await WASM before HTTPSession"
+                                                );
+
+                                                httpJson(
+                                                  appPort,
+                                                  "GET",
+                                                  "/epoxy/index.mjs?v=2",
+                                                  null,
+                                                  {},
+                                                  function (
+                                                    errEp,
+                                                    resEp,
+                                                    _jEp,
+                                                    epSrc
+                                                  ) {
+                                                    t.error(errEp);
+                                                    t.equal(
+                                                      resEp.statusCode,
+                                                      200,
+                                                      "serves epoxy-transport"
+                                                    );
+                                                    t.ok(
+                                                      epSrc.includes(
+                                                        "EpoxyTransport.prototype.init"
+                                                      ),
+                                                      "patches EpoxyTransport.init for concurrent calls"
+                                                    );
+
+                                                    // 9. Authenticated WebSocket upgrade to /wisp/ succeeds
+                                                    var ws = new WebSocket(
+                                                      "ws://127.0.0.1:" +
+                                                        appPort +
+                                                        "/wisp/",
+                                                      {
+                                                        headers: {
+                                                          Cookie: cookieHeader,
+                                                        },
+                                                      }
+                                                    );
+                                                    ws.once(
+                                                      "message",
+                                                      function (msg) {
+                                                        t.ok(
+                                                          Buffer.isBuffer(
+                                                            msg
+                                                          ) && msg.length >= 5,
+                                                          "receives initial WISP CONTINUE handshake frame"
+                                                        );
+                                                        ws.close();
+                                                        done();
+                                                      }
+                                                    );
+                                                    ws.once(
+                                                      "error",
+                                                      function (wsErr) {
+                                                        t.error(wsErr);
+                                                        done();
+                                                      }
+                                                    );
+                                                  }
+                                                );
+                                              }
+                                            );
+                                          }
+                                        );
+                                      }
+                                    );
                                   }
                                 );
-                                ws.once("message", function (msg) {
-                                  t.ok(
-                                    Buffer.isBuffer(msg) && msg.length >= 5,
-                                    "receives initial WISP CONTINUE handshake frame"
-                                  );
-                                  ws.close();
-                                  done();
-                                });
-                                ws.once("error", function (wsErr) {
-                                  t.error(wsErr);
-                                  done();
-                                });
                               }
                             );
                           }

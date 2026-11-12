@@ -27,11 +27,22 @@ module.exports = {
       env: {
         node: false,
         browser: true,
+        worker: true,
+        serviceworker: true,
         es6: true,
+      },
+      globals: {
+        $scramjetLoadWorker: "readonly",
+        $scramjetLoadController: "readonly",
+        BareMux: "readonly",
+      },
+      parserOptions: {
+        ecmaVersion: 2020,
       },
       rules: {
         "no-empty": ["error", { allowEmptyCatch: true }],
         "node/no-unsupported-features/es-syntax": "off",
+        "node/no-unsupported-features/es-builtins": "off",
         "node/no-unsupported-features/node-builtins": "off",
       },
     },

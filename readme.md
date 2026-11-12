@@ -1,25 +1,36 @@
-# Ibossbad
+# Ibossbad — Scramjet + WISP Stealth Web Browser & Proxy
 
-**Hate Iboss? Look no further.**
-
-Ibossbad is a dual-engine stealth web browser and proxy built on an upgraded [Node Unblocker](https://github.com/nfriedly/node-unblocker) backend and a [GUST](https://github.com/nautilus-os/GUST)-inspired **WISP + WebAssembly `libcurl.js`** transport engine. It combines multi-tab browsing, real browser-side TLS 1.3 over WebSockets (`/wisp/`), Acorn AST `location` rewriting for SPAs & games (`neal.fun`, Vite, Next.js, React Router), ad/WebRTC shields, tab cloaking, `about:blank` / `blob:` stealth launching, a Boss/Panic hotkey, passcode/account access protection, and Supabase cloud sync.
+Ibossbad is an all-in-one, school-network-hardened web browser and proxy combining **Mercury Workshop's Scramjet Service-Worker Interception Engine**, **BareMux WASM TLS (`Libcurl` & `Epoxy`)**, **GUST SW-Free Blob WISP Fallback**, and an **Acorn AST Server Stream Engine (`/proxy/`)**, wrapped in a multi-tab stealth browser with **Tab Cloaking**, **about:blank / blob: Launchers**, **Boss/Panic Key**, **Ad/Tracker/WebRTC Shield**, and **Supabase Cloud Sync**.
 
 ---
 
-## Features
+## Triple-Engine Architecture
 
-- **Dual Proxy Engines (Switchable Anytime)**
-  - **WISP + WASM `libcurl` Engine (Default)** — Performs real `libcurl` TLS 1.3 & HTTP/2 handshakes in WebAssembly over a single WebSocket tunnel (`wss://<host>/wisp/` powered by `@mercuryworkshop/wisp-js`, with automatic failover to verified WISP relays), crawls ES module graphs into an `importmap`, AST-rewrites `location` references, and renders inside a sandboxed `blob:` frame with zero direct subresource leaks.
-  - **Server Stream (`/proxy/`) Engine** — Upgraded Node Unblocker streaming engine with Brotli (`br`)/gzip/deflate decompression, Acorn AST `location` rewriting (`lib/location-rewriter.js`), reverse-proxy HTTPS header support, Cloudflare loop-header stripping, and per-origin storage isolation.
-- **Modern Browser-in-a-Browser UI**
-  - Multi-tab browsing with per-tab history, bookmarks bar, live New Tab clock, search engine switcher (DuckDuckGo, Brave, Wikipedia, Google), live WISP latency indicator, Ad/Tracker + WebRTC Shield counter, and a real-time **WISP Network Inspector** drawer.
-- **Stealth & Anti-Filter Suite**
-  - **Tab Cloaking** — One-click presets for Google Docs, Google Classroom, Google Drive, Canvas, Schoology, Clever, Khan Academy, or custom title & icon.
-  - **`about:blank` & `blob:` Launchers** — Open the browser inside an untraceable `about:blank` or `blob:` tab so URLs stay out of browser history.
-  - **Boss / Panic Key** — Configurable hotkey (default `` ` ``) that works both in the browser UI and inside proxied game iframes, instantly replacing the tab with your safe URL (default `https://classroom.google.com`).
-- **Access Gate & Supabase Cloud Sync**
-  - Protect `/`, `/wisp/`, and `/proxy/*` behind a **Passcode** (`PROXY_PASSCODE`) and/or **Supabase Account** login (`public.ibossbad_user_data`).
-  - Automatically syncs bookmarks, WISP relay preferences, and stealth settings across devices when signed in.
+1. **Scramjet Service-Worker Engine (`@mercuryworkshop/scramjet` — Default)**
+   - Registers a root Service Worker (`/sw.js` with `Service-Worker-Allowed: /`) powered by `ScramjetServiceWorker` and `ScramjetController` (`scramjet.wasm.wasm` Rust/OXC rewriter + SW sync XHR).
+   - Routes every proxied request, WebSocket, Worker, and media stream through `@mercuryworkshop/bare-mux` over **WISP** using your choice of **Libcurl WASM (`@mercuryworkshop/libcurl-transport` — TLS 1.3 + HTTP/2)** or **Epoxy Rust TLS (`@mercuryworkshop/epoxy-transport`)**.
+   - Supports complex modern SPAs and games including **YouTube, Discord, Poki, Neal.fun / Infinite Craft, Google, CAPTCHAs, and WebGL games** with zero domain leaks in network logs.
+
+2. **GUST Blob WISP Engine (Automatic SW-Free Fallback)**
+   - If a managed Chromebook or browser context blocks Service Worker registration, Ibossbad **automatically falls back** to its built-in **GUST Blob WISP** engine (`public/wisp-engine.js`), which fetches via `libcurl.js` WASM over WISP and renders inside an isolated `blob:` document with virtual DOM/XHR/Fetch interception.
+
+3. **Server Stream Engine (`/proxy/` — Classic Unblocker + Acorn AST)**
+   - Server-side streaming HTTP/WebSocket proxy with Brotli/Zstd/Gzip decompression, Acorn AST `window.location` / `document.location` rewriting (`lib/location-rewriter.js`), `Content-Security-Policy` / `X-Frame-Options` stripping, and per-origin `localStorage`/`sessionStorage` isolation.
+
+4. **Built-in `/wisp/` Server + Multi-Relay Pool Failover**
+   - Ships `@mercuryworkshop/wisp-js` directly on the same HTTP/HTTPS port (`/wisp/`) so Render (`wss://ibossbad.onrender.com/wisp/`) requires zero extra ports or external domains, with automatic latency-probed WISP pool failover when needed.
+
+---
+
+## Stealth, Privacy & Cloud Features
+
+- **Multi-Tab Browser UI**: Tabs, omnibox with search-engine switcher (DuckDuckGo, Brave, Google, Wikipedia), Quick Launch cards, bookmarks bar, live **WISP Network Inspector Drawer**, and Ad/Tracker/WebRTC Shield counter.
+- **Stealth & Anti-Detection Suite**:
+  - **Tab Cloaking** presets (*Google Classroom*, *Google Docs*, *Google Drive*, *Canvas LMS*, *Clever Portal*, *IXL*, *Khan Academy*, or custom title + favicon).
+  - **`about:blank` & `blob:` Stealth Launchers** so URL bar & browser history stay clean.
+  - **Boss / Panic Hotkey** (default `` ` ``, customizable) — works even while focused inside Scramjet or GUST game iframes.
+- **Access Gate + Supabase Cloud Sync**:
+  - Unlock via shared **Passcode** (default `ibossbad`, configurable via `ACCESS_CODE`) or **Supabase Email + Password** account (`public.ibossbad_user_data` with Row-Level Security) to sync bookmarks, engine preferences, cloak settings, and panic keys across devices.
 
 ---
 
@@ -30,36 +41,27 @@ npm install
 npm start
 ```
 
-The server listens on `0.0.0.0` at `PORT` (default `8080`).
+Open `http://localhost:8080` (default passcode: `ibossbad`).
 
-> **Render Deployment Note:** Both the repository root (`npm start` -> `node server.js`) and `examples/simple` (`npm start` -> `node server.js`) launch the full Ibossbad application (including `/wisp/` and `/proxy/`), so existing Render services configured with either root directory work out of the box.
-
----
-
-## Environment Variables
+### Environment Variables (Render / Production)
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `PORT` | `8080` | Port to bind HTTP, `/wisp/`, & WebSocket proxy server |
-| `REQUIRE_AUTH` | `true` | Set to `false` to disable the login/passcode gate |
-| `PROXY_PASSCODE` | `ibossbad` | Passcode for quick unlock on the Access Gate |
-| `DISABLE_PASSCODE` | `false` | Set to `true` to require Supabase account login only |
-| `SESSION_SECRET` | *(auto)* | HMAC secret used to sign `__ibossbad_session` cookies |
-| `PROXY_HOST` | *(auto)* | Optional override for redirect host (auto-detected from headers by default) |
-| `PROXY_STRICT_SSL` | `false` | Set to `true` to enforce strict upstream certificate verification in `/proxy/` mode |
-| `SUPABASE_URL` | *(project URL)* | Supabase project URL for authentication & cloud sync |
-| `SUPABASE_ANON_KEY` | *(anon key)* | Supabase public anon/publishable key |
+| `PORT` | `8080` | HTTP + WebSocket (`/wisp/` & `/proxy/`) listen port |
+| `ACCESS_CODE` | `ibossbad` | Shared passcode for quick unlock (`AUTH_REQUIRED=false` disables gate) |
+| `SESSION_SECRET` | *(auto)* | HMAC secret for signed HttpOnly session cookies |
+| `SUPABASE_URL` | *(configured)* | Supabase project URL for account auth & cloud sync |
+| `SUPABASE_ANON_KEY` | *(configured)* | Supabase public anon key (protected by RLS) |
 
 ---
 
 ## Testing & Linting
 
 ```bash
+npm run autofix
 npm test
 ```
 
----
-
 ## License
 
-Released under the [GNU Affero General Public License v3.0](LICENSE.txt). Originally based on [node-unblocker](https://github.com/nfriedly/node-unblocker) by Nathan Friedly, with WISP/AST proxy techniques inspired by [GUST](https://github.com/nautilus-os/GUST) (AGPL-3.0).
+MIT

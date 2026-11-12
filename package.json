@@ -8,6 +8,10 @@
     "node": ">=14.0.0"
   },
   "dependencies": {
+    "@mercuryworkshop/bare-mux": "^2.1.9",
+    "@mercuryworkshop/epoxy-transport": "^2.1.29",
+    "@mercuryworkshop/libcurl-transport": "^1.5.2",
+    "@mercuryworkshop/scramjet": "^1.1.0",
     "@mercuryworkshop/wisp-js": "^0.5.3",
     "acorn": "^8.19.0",
     "acorn-walk": "^8.3.5",
