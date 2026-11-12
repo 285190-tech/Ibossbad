@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="same-origin" />
+    <title>Ibossbad</title>
+    <link
+      id="pageFavicon"
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230ea5e9'/%3E%3Cpath d='M9 16.5L14 21.5L23 11.5' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="/ui/styles.css" />
+  </head>
+  <body>
+    <!-- Access Gate Overlay -->
+    <div id="authGate" class="gate-overlay hidden" role="dialog" aria-modal="true">
+      <div class="gate-card">
+        <div class="gate-brand">
+          <div class="brand-logo" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+              <path d="m9 12 2 2 4-4"></path>
+            </svg>
+          </div>
+          <div>
+            <h1 class="gate-title">Ibossbad</h1>
+            <p class="gate-subtitle">GUST-Powered WISP &amp; Stealth Browser</p>
+          </div>
+        </div>
+
+        <div id="gateTabs" class="gate-tabs">
+          <button type="button" class="gate-tab active" data-gate-tab="passcode" id="gateTabPasscode">
+            Passcode
+          </button>
+          <button type="button" class="gate-tab" data-gate-tab="account" id="gateTabAccount">
+            Cloud Account
+          </button>
+        </div>
+
+        <div id="gateAlert" class="gate-alert hidden"></div>
+
+        <!-- Passcode Form -->
+        <form id="passcodeForm" class="gate-form">
+          <label class="field-label" for="passcodeInput">Access Passcode</label>
+          <input
+            id="passcodeInput"
+            type="password"
+            class="field-input"
+            placeholder="Enter proxy passcode..."
+            autocomplete="current-password"
+            required
+          />
+          <button type="submit" class="btn btn-primary btn-block" id="passcodeSubmitBtn">
+            Unlock Browser
+          </button>
+          <p class="gate-hint">
+            Tip: Sign in with <strong>Cloud Account</strong> to sync bookmarks, WISP relays &amp; stealth settings across devices.
+          </p>
+        </form>
+
+        <!-- Supabase Account Form -->
+        <form id="accountForm" class="gate-form hidden">
+          <div class="account-mode-switch">
+            <button type="button" class="mode-pill active" data-auth-mode="login">Sign In</button>
+            <button type="button" class="mode-pill" data-auth-mode="signup">Create Account</button>
+          </div>
+
+          <label class="field-label" for="authEmail">Email</label>
+          <input
+            id="authEmail"
+            type="email"
+            class="field-input"
+            placeholder="you@example.com"
+            autocomplete="email"
+          />
+
+          <label class="field-label" for="authPassword">Password</label>
+          <input
+            id="authPassword"
+            type="password"
+            class="field-input"
+            placeholder="At least 6 characters"
+            autocomplete="current-password"
+          />
+
+          <button type="submit" class="btn btn-primary btn-block" id="accountSubmitBtn">
+            Sign In &amp; Sync
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Main Browser Shell -->
+    <div id="browserApp" class="browser-shell">
+      <!-- Top Tab Bar -->
+      <header class="tab-strip">
+        <div id="tabsContainer" class="tabs-list" role="tablist"></div>
+        <button id="newTabBtn" type="button" class="icon-btn new-tab-btn" title="New Tab (Alt+T)" aria-label="New Tab">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+            <path d="M12 5v14M5 12h14"></path>
+          </svg>
+        </button>
+
+        <div class="tab-strip-spacer"></div>
+
+        <div class="top-actions">
+          <button id="transportPillBtn" type="button" class="pill-btn transport-pill" title="Transport Engine &amp; WISP Relay Status (Click to configure)">
+            <span class="status-dot synced" id="wispDot"></span>
+            <span id="transportLabel">WISP · Ready</span>
+          </button>
+
+          <button id="shieldBtn" type="button" class="pill-btn shield-pill active" title="Toggle Ad &amp; Tracker Shield">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            </svg>
+            <span id="shieldCountLabel">0</span>
+          </button>
+
+          <button id="accountBadgeBtn" type="button" class="pill-btn" title="Cloud Sync &amp; Account">
+            <span class="status-dot" id="syncDot"></span>
+            <span id="accountBadgeLabel">Local</span>
+          </button>
+
+          <button id="aboutBlankBtn" type="button" class="pill-btn stealth-pill" title="Open in untraceable about:blank tab">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"></path>
+              <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"></path>
+              <line x1="1" y1="1" x2="23" y2="23"></line>
+            </svg>
+            <span>about:blank</span>
+          </button>
+
+          <button id="panicBtn" type="button" class="pill-btn panic-pill" title="Instant Boss/Panic Redirect">
+            <span>Panic</span>
+            <kbd id="panicKeyBadge">`</kbd>
+          </button>
+        </div>
+      </header>
+
+      <!-- Navigation Toolbar -->
+      <div class="nav-bar">
+        <div class="nav-controls">
+          <button id="backBtn" type="button" class="icon-btn" title="Back" aria-label="Back">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m15 18-6-6 6-6"></path>
+            </svg>
+          </button>
+          <button id="forwardBtn" type="button" class="icon-btn" title="Forward" aria-label="Forward">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m9 18 6-6-6-6"></path>
+            </svg>
+          </button>
+          <button id="reloadBtn" type="button" class="icon-btn" title="Reload" aria-label="Reload">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
+              <path d="M21 3v6h-6"></path>
+            </svg>
+          </button>
+          <button id="homeBtn" type="button" class="icon-btn" title="New Tab Home" aria-label="Home">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+              <polyline points="9 22 9 12 15 12 15 22"></polyline>
+            </svg>
+          </button>
+        </div>
+
+        <form id="omniboxForm" class="omnibox">
+          <select id="engineSelect" class="engine-select" aria-label="Search Engine" title="Search Engine">
+            <option value="ddg">DuckDuckGo</option>
+            <option value="brave">Brave</option>
+            <option value="wikipedia">Wikipedia</option>
+            <option value="google">Google</option>
+          </select>
+
+          <input
+            id="omniboxInput"
+            type="text"
+            class="omnibox-input"
+            placeholder="Search or enter any URL (neal.fun, poki.com, duckduckgo.com)..."
+            autocomplete="off"
+            spellcheck="false"
+          />
+
+          <button id="bookmarkToggleBtn" type="button" class="icon-btn omnibox-action hidden" title="Bookmark this page" aria-label="Bookmark">
+            <svg id="bookmarkStarIcon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+            </svg>
+          </button>
+
+          <button type="submit" class="omnibox-go" title="Go">
+            Go
+          </button>
+        </form>
+
+        <div class="nav-controls">
+          <button id="inspectorBtn" type="button" class="icon-btn" title="Network &amp; WISP Request Inspector" aria-label="Network Inspector">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+            </svg>
+          </button>
+          <button id="openDirectBtn" type="button" class="icon-btn" title="Open current URL via /proxy/ in full tab" aria-label="Open Direct">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+              <polyline points="15 3 21 3 21 9"></polyline>
+              <line x1="10" y1="14" x2="21" y2="3"></line>
+            </svg>
+          </button>
+          <button id="settingsBtn" type="button" class="icon-btn" title="Stealth, WISP &amp; Proxy Settings" aria-label="Settings">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Compact Bookmarks Strip -->
+      <div id="bookmarksBar" class="bookmarks-bar"></div>
+
+      <!-- Loading Progress Line -->
+      <div id="pageProgressBar" class="progress-line hidden">
+        <div class="progress-fill"></div>
+      </div>
+
+      <!-- Content Viewport -->
+      <main class="viewport">
+        <!-- Live Loading Stage Toast -->
+        <div id="loadingStageChip" class="loading-stage-chip hidden">
+          <span class="spinner-ring"></span>
+          <span id="loadingStageText">Connecting via WISP...</span>
+        </div>
+
+        <!-- New Tab Home Screen -->
+        <section id="newTabView" class="new-tab-view">
+          <div class="home-container">
+            <div class="hero-header">
+              <div class="hero-clock-row">
+                <div id="heroClock" class="hero-clock">12:00</div>
+                <div id="heroDate" class="hero-date">Thursday, November 12</div>
+              </div>
+              <div class="hero-badge">
+                <span class="pulse-dot"></span>
+                <span id="stealthStatusText">WISP + WASM TLS Ready · Cloak: Default</span>
+              </div>
+              <h1 class="hero-title">Browse without limits.</h1>
+              <p class="hero-subtitle">
+                Powered by real WebAssembly <code>libcurl</code> + WISP tunneling &amp; AST rewriting — full SPA, Cloudflare &amp; web game compatibility with zero domain leaks.
+              </p>
+            </div>
+
+            <form id="heroSearchForm" class="hero-search">
+              <svg class="hero-search-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <input
+                id="heroSearchInput"
+                type="text"
+                placeholder="Enter any website (neal.fun, wikipedia.org, poki.com) or search..."
+                autocomplete="off"
+                spellcheck="false"
+              />
+              <button type="submit" class="btn btn-primary">Launch</button>
+            </form>
+
+            <!-- Quick Launch Grid -->
+            <div class="section-block">
+              <div class="section-header">
+                <h2>Quick Launch</h2>
+                <span class="section-caption">Games, SPAs &amp; popular sites</span>
+              </div>
+              <div id="quickLinksGrid" class="cards-grid"></div>
+            </div>
+
+            <!-- Saved Bookmarks -->
+            <div class="section-block">
+              <div class="section-header">
+                <h2>Saved Bookmarks</h2>
+                <button id="showAddBookmarkBtn" type="button" class="link-btn">+ Add Bookmark</button>
+              </div>
+
+              <form id="addBookmarkForm" class="bookmark-add-form hidden">
+                <input id="bmTitleInput" type="text" class="field-input" placeholder="Title (e.g. Infinite Craft)" required />
+                <input id="bmUrlInput" type="text" class="field-input" placeholder="URL (e.g. https://neal.fun/infinite-craft/)" required />
+                <button type="submit" class="btn btn-primary">Save</button>
+                <button id="cancelAddBookmarkBtn" type="button" class="btn btn-ghost">Cancel</button>
+              </form>
+
+              <div id="bookmarksGrid" class="cards-grid"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Proxied Tab Iframes Container -->
+        <div id="iframesContainer" class="iframes-stage"></div>
+
+        <!-- Network & WISP Request Inspector Drawer -->
+        <aside id="inspectorDrawer" class="inspector-drawer hidden" aria-label="Network Request Log">
+          <div class="inspector-header">
+            <div class="inspector-title">
+              <strong>WISP Network Inspector</strong>
+              <span id="inspectorRelayBadge" class="relay-mini-badge">Idle</span>
+            </div>
+            <div class="inspector-actions">
+              <button id="clearLogBtn" type="button" class="btn btn-ghost btn-xs">Clear</button>
+              <button id="closeInspectorBtn" type="button" class="icon-btn" aria-label="Close Inspector">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <path d="M18 6 6 18M6 6l12 12"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div id="inspectorList" class="inspector-list">
+            <div class="empty-bookmarks">Requests routed over WISP will appear here in real time.</div>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <!-- Settings & Stealth Modal -->
+    <div id="settingsModal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+      <div class="modal-panel">
+        <div class="modal-header">
+          <h2>Engine, WISP, Stealth &amp; Cloud Settings</h2>
+          <button id="closeSettingsBtn" type="button" class="icon-btn" aria-label="Close">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M18 6 6 18M6 6l12 12"></path>
+            </svg>
+          </button>
+        </div>
+
+        <div class="modal-body">
+          <!-- Proxy Engine & WISP Transport -->
+          <div class="settings-group">
+            <h3>Proxy Transport Engine (GUST Architecture)</h3>
+            <p class="settings-desc">
+              <strong>WISP + WASM libcurl</strong> performs real browser-side TLS 1.3 over WebSockets and renders inside an isolated Blob sandbox so Cloudflare, SPAs &amp; games work 100%.
+            </p>
+            <div class="toggle-row">
+              <div>
+                <strong>Active Engine</strong>
+                <p class="settings-desc">Switch between GUST WISP/WASM or Server HTTP Stream (<code>/proxy/</code>).</p>
+              </div>
+              <select id="proxyEngineSelect" class="field-select">
+                <option value="wisp">WISP + WASM libcurl (Recommended)</option>
+                <option value="stream">Server Stream (/proxy/)</option>
+              </select>
+            </div>
+
+            <div class="toggle-row" style="margin-top:12px">
+              <div>
+                <strong>WISP Relay Server</strong>
+                <p class="settings-desc">Uses self-hosted <code>/wisp/</code> first with automatic failover.</p>
+              </div>
+              <select id="wispPresetSelect" class="field-select">
+                <option value="auto">Auto (/wisp/ + Pool Failover)</option>
+                <option value="self">Self-Hosted Only (/wisp/)</option>
+                <option value="wss://definitelyscience.com/wisp/">DefinitelyScience WISP</option>
+                <option value="wss://mages.io/wisp/">Mages WISP</option>
+                <option value="wss://lichology.com/wisp/">Lichology WISP</option>
+                <option value="wss://wisp.mercurywork.shop/">MercuryWorkshop WISP</option>
+                <option value="wss://wisp.terbiumon.top/wisp/">Terbium WISP</option>
+                <option value="custom">Custom WISP URL...</option>
+              </select>
+            </div>
+
+            <div id="customWispBox" class="custom-cloak-row hidden" style="grid-template-columns:1fr">
+              <input id="customWispInput" type="text" class="field-input" placeholder="wss://your-wisp-relay.example/wisp/" />
+            </div>
+
+            <div class="toggle-row" style="margin-top:12px">
+              <div>
+                <strong>Ad, Tracker &amp; WebRTC Shield</strong>
+                <p class="settings-desc">Block ad/analytics domains and prevent WebRTC local IP leaks.</p>
+              </div>
+              <select id="shieldModeSelect" class="field-select">
+                <option value="on">Enabled (Recommended)</option>
+                <option value="off">Disabled</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Tab Cloaking -->
+          <div class="settings-group">
+            <h3>Tab Cloaking (Disguise Title &amp; Icon)</h3>
+            <p class="settings-desc">Instantly disguise this browser tab as a school app.</p>
+            <div id="cloakPresetsGrid" class="cloak-grid"></div>
+
+            <div id="customCloakFields" class="custom-cloak-row hidden">
+              <input id="customCloakTitle" type="text" class="field-input" placeholder="Custom Tab Title" />
+              <input id="customCloakIcon" type="text" class="field-input" placeholder="Custom Favicon URL (optional)" />
+            </div>
+          </div>
+
+          <!-- Panic Key -->
+          <div class="settings-group">
+            <h3>Boss / Panic Key</h3>
+            <p class="settings-desc">
+              Press this key anywhere (even inside proxied games) to immediately replace the page.
+            </p>
+            <div class="panic-row">
+              <div class="panic-key-box">
+                <label class="field-label">Hotkey</label>
+                <button id="recordPanicKeyBtn" type="button" class="btn btn-secondary">
+                  Key: <strong id="currentPanicKeyLabel">`</strong> (Click to change)
+                </button>
+              </div>
+              <div class="panic-url-box">
+                <label class="field-label" for="panicUrlInput">Redirect Destination</label>
+                <input
+                  id="panicUrlInput"
+                  type="url"
+                  class="field-input"
+                  placeholder="https://classroom.google.com"
+                />
+              </div>
+            </div>
+          </div>
+
+          <!-- Stealth Launchers -->
+          <div class="settings-group">
+            <h3>Stealth Window Launchers</h3>
+            <p class="settings-desc">Open Ibossbad inside an untraceable <code>about:blank</code> or <code>blob:</code> tab so URL history stays hidden.</p>
+            <div class="stealth-actions-row">
+              <button id="modalAboutBlankBtn" type="button" class="btn btn-secondary">
+                Launch in about:blank Tab
+              </button>
+              <button id="modalBlobTabBtn" type="button" class="btn btn-secondary">
+                Launch in blob: Tab
+              </button>
+            </div>
+          </div>
+
+          <!-- Cloud Sync & Session -->
+          <div class="settings-group">
+            <h3>Cloud Sync &amp; Session</h3>
+            <div id="sessionInfoBox" class="session-box"></div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button id="saveSettingsBtn" type="button" class="btn btn-primary">Save &amp; Apply</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toastContainer" class="toast-container"></div>
+
+    <script defer src="/vendor/libcurl/libcurl.js"></script>
+    <script defer src="/vendor/acorn/acorn.js"></script>
+    <script defer src="/vendor/acorn-walk/walk.js"></script>
+    <script defer src="/ui/wisp-engine.js"></script>
+    <script defer src="/ui/app.js"></script>
+  </body>
+</html>
