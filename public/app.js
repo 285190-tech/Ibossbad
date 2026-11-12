@@ -5,6 +5,7 @@
     BOOKMARKS: "ibossbad_bookmarks_v1",
     SETTINGS: "ibossbad_settings_v1",
     SUPABASE_SESSION: "ibossbad_supabase_session_v1",
+    OPEN_TABS: "ibossbad_open_tabs_v1",
   };
 
   const SEARCH_ENGINES = {
@@ -26,6 +27,44 @@
       name: "Google",
       buildUrl: (q) =>
         "https://www.google.com/search?q=" + encodeURIComponent(q),
+    },
+  };
+
+  const THEME_PRESETS = {
+    midnight: {
+      bgBase: "#090d16",
+      bgSurface: "#111827",
+      bgElevated: "#1a2336",
+      accent: "#6366f1",
+      textPrimary: "#f1f5f9",
+    },
+    oled: {
+      bgBase: "#000000",
+      bgSurface: "#0a0a0c",
+      bgElevated: "#141418",
+      accent: "#0ea5e9",
+      textPrimary: "#f8fafc",
+    },
+    catppuccin: {
+      bgBase: "#1e1e2e",
+      bgSurface: "#181825",
+      bgElevated: "#313244",
+      accent: "#cba6f7",
+      textPrimary: "#cdd6f4",
+    },
+    cyberpunk: {
+      bgBase: "#0b0716",
+      bgSurface: "#160d29",
+      bgElevated: "#241442",
+      accent: "#f43f5e",
+      textPrimary: "#fdf2f8",
+    },
+    nord: {
+      bgBase: "#242933",
+      bgSurface: "#2e3440",
+      bgElevated: "#3b4252",
+      accent: "#88c0d0",
+      textPrimary: "#eceff4",
     },
   };
 
@@ -98,18 +137,22 @@
   };
 
   const QUICK_LINKS = [
-    { title: "Neal.fun", url: "https://neal.fun/", badge: "NF" },
-    {
-      title: "Infinite Craft",
-      url: "https://neal.fun/infinite-craft/",
-      badge: "IC",
-    },
+    { title: "200+ Games Hub", url: "iboss://games", badge: "GM" },
+    { title: "Media & Radio", url: "iboss://media", badge: "MD" },
+    { title: "Retro ROMs", url: "iboss://emulator", badge: "EM" },
+    { title: "1-Click Store", url: "iboss://store", badge: "ST" },
     { title: "YouTube", url: "https://www.youtube.com/", badge: "YT" },
     { title: "Discord", url: "https://discord.com/app", badge: "DC" },
-    { title: "DuckDuckGo", url: "https://duckduckgo.com/", badge: "DD" },
-    { title: "Poki Games", url: "https://poki.com/", badge: "PK" },
-    { title: "Wikipedia", url: "https://en.wikipedia.org/", badge: "W" },
-    { title: "2048", url: "https://play2048.co/", badge: "20" },
+    {
+      title: "EaglerCraft 1.8",
+      url: "https://monkeygg2.github.io/games/eaglercraft/",
+      badge: "MC",
+    },
+    {
+      title: "Slope",
+      url: "https://monkeygg2.github.io/games/slope/",
+      badge: "SL",
+    },
   ];
 
   const DEFAULT_SETTINGS = {
@@ -118,12 +161,26 @@
     customIcon: "",
     panicKey: "`",
     panicUrl: "https://classroom.google.com",
+    decoyTemplate: "gdocs",
     searchEngine: "ddg",
-    proxyEngine: "scramjet", // "scramjet" (SW + WISP), "wisp" (GUST Blob WISP), or "stream" (/proxy/)
-    bareTransport: "libcurl", // "libcurl" or "epoxy"
-    wispPreset: "auto", // "auto", "self", "wss://...", or "custom"
+    proxyEngine: "scramjet",
+    bareTransport: "libcurl",
+    wispPreset: "auto",
     customWispUrl: "",
     shieldEnabled: true,
+    themePreset: "midnight",
+    customColors: {
+      bgBase: "#090d16",
+      bgSurface: "#111827",
+      accent: "#0ea5e9",
+      textPrimary: "#f1f5f9",
+    },
+    particlesEnabled: true,
+    autoCloakBlur: false,
+    antiClose: false,
+    ramSaver: true,
+    hkGames: "Alt+G",
+    hkSplit: "Alt+S",
   };
 
   const state = {
@@ -131,14 +188,26 @@
     authenticated: false,
     authRequired: true,
     passcodeEnabled: true,
+    camouflageServerEnabled: false,
+    camoRevealed: false,
+    lootlabs: { enabled: false, durationHours: 12 },
+    motd: null,
+    chatEnabled: true,
+    isAdmin: false,
     user: null,
     supabase: { enabled: false, url: "", anonKey: "" },
     authMode: "login",
     gateForceOpen: false,
     recordingPanicKey: false,
+    decoyActive: false,
+    lastPanicTapTs: 0,
+    splitMode: false,
+    customGames: [],
+    dismissedBroadcastTs: 0,
     settings: loadJson(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS),
     bookmarks: loadJson(STORAGE_KEYS.BOOKMARKS, []),
     tabs: [],
+    closedTabs: [],
     activeTabId: null,
     nextTabNum: 1,
     wispStatus: { label: "Ready", latency: null, blockedCount: 0 },
@@ -149,12 +218,16 @@
 
   let scramjetEngine = null;
   let wispEngine = null;
+  let mediaEmulator = null;
+  let internalPages = null;
+  let adminPanel = null;
+  let particlesActive = false;
 
   function loadJson(key, fallback) {
     try {
       const raw = localStorage.getItem(key);
       return raw ? JSON.parse(raw) : fallback;
-    } catch (e) {
+    } catch (_e) {
       return fallback;
     }
   }
@@ -162,9 +235,7 @@
   function saveJson(key, value) {
     try {
       localStorage.setItem(key, JSON.stringify(value));
-    } catch (e) {
-      // ignore storage quota errors
-    }
+    } catch (_e) {}
   }
 
   function showToast(msg) {
@@ -176,7 +247,7 @@
     container.appendChild(el);
     setTimeout(() => {
       el.remove();
-    }, 2800);
+    }, 3000);
   }
 
   function setLoadingProgress(active, stageMessage) {
@@ -205,16 +276,32 @@
   }
 
   function getDomain(urlStr) {
+    if (!urlStr) return "";
+    if (/^iboss:\/\//i.test(urlStr)) {
+      return urlStr.toLowerCase();
+    }
     try {
       return new URL(urlStr).hostname.replace(/^www\./, "");
-    } catch (e) {
+    } catch (_e) {
       return urlStr;
     }
+  }
+
+  function isInternalUrl(urlStr) {
+    return /^iboss:\/\//i.test(String(urlStr || "").trim());
   }
 
   function resolveInputToUrl(rawInput) {
     const input = (rawInput || "").trim();
     if (!input) return null;
+
+    if (/^iboss:\/\//i.test(input)) {
+      return input.toLowerCase();
+    }
+
+    if (/^javascript:/i.test(input)) {
+      return input;
+    }
 
     if (input.indexOf(state.prefix) === 0) {
       return input.substr(state.prefix.length);
@@ -241,6 +328,76 @@
 
   function buildProxiedPath(targetUrl) {
     return state.prefix + targetUrl;
+  }
+
+  // --- Theme & Particle Starfield ---
+  function applyTheme() {
+    const presetName = state.settings.themePreset || "midnight";
+    const colors =
+      presetName === "custom"
+        ? Object.assign(
+            {},
+            THEME_PRESETS.midnight,
+            state.settings.customColors || {}
+          )
+        : THEME_PRESETS[presetName] || THEME_PRESETS.midnight;
+
+    const root = document.documentElement;
+    root.style.setProperty("--bg-base", colors.bgBase);
+    root.style.setProperty("--bg-surface", colors.bgSurface);
+    if (colors.bgElevated) {
+      root.style.setProperty("--bg-elevated", colors.bgElevated);
+    }
+    root.style.setProperty("--accent", colors.accent);
+    root.style.setProperty("--accent-hover", colors.accent);
+    root.style.setProperty("--text-primary", colors.textPrimary);
+  }
+
+  function initParticleStarfield() {
+    const canvas = document.getElementById("particleCanvas");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const stars = [];
+    for (let i = 0; i < 45; i++) {
+      stars.push({
+        x: Math.random() * 1400,
+        y: Math.random() * 900,
+        r: Math.random() * 1.6 + 0.5,
+        vy: Math.random() * 0.35 + 0.1,
+      });
+    }
+    function resize() {
+      canvas.width = canvas.clientWidth || window.innerWidth;
+      canvas.height = canvas.clientHeight || window.innerHeight;
+    }
+    window.addEventListener("resize", resize);
+    resize();
+
+    function frame() {
+      if (
+        particlesActive &&
+        state.settings.particlesEnabled !== false &&
+        !document.hidden
+      ) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "rgba(148, 163, 184, 0.35)";
+        for (let i = 0; i < stars.length; i++) {
+          const s = stars[i];
+          s.y -= s.vy;
+          if (s.y < 0) {
+            s.y = canvas.height;
+            s.x = Math.random() * canvas.width;
+          }
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
   }
 
   function applyWispConfiguration() {
@@ -355,8 +512,16 @@
     }
   }
 
-  // --- Stealth: Cloak, about:blank, blob: & Panic ---
+  // --- Stealth: Cloak, Decoy Overlay, about:blank, blob: & Panic ---
   function getEffectiveCloak() {
+    if (state.decoyActive) {
+      return {
+        label: "Google Docs",
+        title: CLOAK_PRESETS.gdocs.title,
+        icon: CLOAK_PRESETS.gdocs.icon,
+        presetKey: "gdocs",
+      };
+    }
     const presetKey = state.settings.cloak || "none";
     const preset = CLOAK_PRESETS[presetKey] || CLOAK_PRESETS.none;
     const title =
@@ -370,8 +535,14 @@
     return { label: preset.label, title, icon, presetKey };
   }
 
-  function applyCloak() {
-    const c = getEffectiveCloak();
+  function applyCloak(forceBlurDocs) {
+    const c = forceBlurDocs
+      ? {
+          label: "Google Docs",
+          title: CLOAK_PRESETS.gdocs.title,
+          icon: CLOAK_PRESETS.gdocs.icon,
+        }
+      : getEffectiveCloak();
     document.title = c.title;
     let link = document.getElementById("pageFavicon");
     if (!link) {
@@ -398,20 +569,152 @@
         engLabel +
         " · Cloak: " +
         c.label +
-        " · Panic: [" +
+        " · Boss: [" +
         (state.settings.panicKey || "`") +
         "]";
     }
   }
 
-  function triggerPanic() {
+  function setTabAudioMuted(tab, muted) {
+    tab.muted = Boolean(muted);
+    if (tab.iframe) {
+      tab.iframe.dataset.muted = tab.muted ? "true" : "false";
+      try {
+        const doc = tab.iframe.contentDocument;
+        if (doc) {
+          doc.querySelectorAll("video, audio").forEach((m) => {
+            m.muted = tab.muted;
+          });
+        }
+      } catch (_e) {}
+    }
+    updateMuteButtonUI();
+  }
+
+  function drawDesmosDecoyCanvas() {
+    const canvas = document.getElementById("desmosCanvas");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    const scale = 38;
+    const ox = w / 2;
+    const oy = h / 2;
+
+    ctx.strokeStyle = "#e2e8f0";
+    ctx.lineWidth = 1;
+    for (let x = ox % scale; x < w; x += scale) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, h);
+      ctx.stroke();
+    }
+    for (let y = oy % scale; y < h; y += scale) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = "#475569";
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(0, oy);
+    ctx.lineTo(w, oy);
+    ctx.moveTo(ox, 0);
+    ctx.lineTo(ox, h);
+    ctx.stroke();
+
+    const expr1 =
+      (document.getElementById("desmosFn1") &&
+        document.getElementById("desmosFn1").value) ||
+      "Math.sin(x)*2";
+    const expr2 =
+      (document.getElementById("desmosFn2") &&
+        document.getElementById("desmosFn2").value) ||
+      "0.25*x*x-3";
+
+    [
+      { expr: expr1, color: "#c74440" },
+      { expr: expr2, color: "#2d70b3" },
+    ].forEach((fn) => {
+      try {
+        // eslint-disable-next-line no-new-func
+        const evaluator = new Function("x", "return (" + fn.expr + ");");
+        ctx.strokeStyle = fn.color;
+        ctx.lineWidth = 2.6;
+        ctx.beginPath();
+        let started = false;
+        for (let px = 0; px < w; px += 2) {
+          const x = (px - ox) / scale;
+          const y = Number(evaluator(x));
+          if (!Number.isFinite(y)) {
+            started = false;
+            continue;
+          }
+          const py = oy - y * scale;
+          if (!started) {
+            ctx.moveTo(px, py);
+            started = true;
+          } else {
+            ctx.lineTo(px, py);
+          }
+        }
+        ctx.stroke();
+      } catch (_e) {}
+    });
+  }
+
+  function syncDecoyTemplateView() {
+    const activeTpl = state.settings.decoyTemplate || "gdocs";
+    document.querySelectorAll("[data-decoy-view]").forEach((el) => {
+      el.classList.toggle(
+        "hidden",
+        el.getAttribute("data-decoy-view") !== activeTpl
+      );
+    });
+    document.querySelectorAll(".decoy-switcher").forEach((sel) => {
+      sel.value = activeTpl;
+    });
+    if (activeTpl === "desmos") {
+      drawDesmosDecoyCanvas();
+    }
+  }
+
+  function setDecoyOverlay(active) {
+    state.decoyActive = Boolean(active);
+    const el = document.getElementById("decoyOverlay");
+    if (el) {
+      el.classList.toggle("hidden", !state.decoyActive);
+    }
+    if (state.decoyActive) {
+      syncDecoyTemplateView();
+      state.tabs.forEach((t) => setTabAudioMuted(t, true));
+      if (mediaEmulator) {
+        mediaEmulator.pauseRadioForBossKey();
+      }
+    }
+    applyCloak();
+  }
+
+  function triggerPanicRedirect() {
     const dest =
       (state.settings.panicUrl || "").trim() || "https://classroom.google.com";
     try {
       window.top.location.replace(dest);
-    } catch (e) {
+    } catch (_e) {
       window.location.replace(dest);
     }
+  }
+
+  function handleBossKeyActivation() {
+    const now = Date.now();
+    if (now - state.lastPanicTapTs < 450) {
+      triggerPanicRedirect();
+      return;
+    }
+    state.lastPanicTapTs = now;
+    setDecoyOverlay(!state.decoyActive);
   }
 
   function openInAboutBlank(targetHref) {
@@ -467,7 +770,7 @@
     }
   }
 
-  // --- Supabase Cloud Sync (Server Proxy + Automatic Browser Fallback) ---
+  // --- Supabase Cloud Sync (Bookmarks + Settings + Game Saves) ---
   function getStoredSupabaseTokens() {
     return loadJson(STORAGE_KEYS.SUPABASE_SESSION, null);
   }
@@ -480,7 +783,7 @@
     saveJson(STORAGE_KEYS.SUPABASE_SESSION, tokens);
   }
 
-  async function syncFromCloud() {
+  async function syncFromCloud(restoreSavesToo) {
     const tokens = getStoredSupabaseTokens();
     if (!tokens || !tokens.access_token || !state.supabase.url) return;
 
@@ -498,7 +801,7 @@
           state.supabase.url +
             "/rest/v1/ibossbad_user_data?user_id=eq." +
             encodeURIComponent(tokens.user.id) +
-            "&select=bookmarks,settings,updated_at&limit=1",
+            "&select=bookmarks,settings,game_saves,updated_at&limit=1",
           {
             headers: {
               apikey: state.supabase.anonKey,
@@ -529,19 +832,46 @@
           );
           saveJson(STORAGE_KEYS.SETTINGS, state.settings);
         }
+        if (
+          restoreSavesToo &&
+          cloudRow.game_saves &&
+          typeof cloudRow.game_saves === "object"
+        ) {
+          Object.keys(cloudRow.game_saves).forEach((k) => {
+            if (
+              k !== STORAGE_KEYS.SUPABASE_SESSION &&
+              typeof cloudRow.game_saves[k] === "string"
+            ) {
+              localStorage.setItem(k, cloudRow.game_saves[k]);
+            }
+          });
+          showToast("Game saves restored from Cloud!");
+        }
+        applyTheme();
         applyCloak();
         applyWispConfiguration();
         syncToolbarSettings();
         renderBookmarks();
       }
-    } catch (e) {
-      // keep local state on transient network failure
-    }
+    } catch (_e) {}
   }
 
-  async function pushToCloud() {
+  async function pushToCloud(optionalGameSaves) {
     const tokens = getStoredSupabaseTokens();
-    if (!tokens || !tokens.access_token || !state.supabase.url) return;
+    if (!tokens || !tokens.access_token || !state.supabase.url) {
+      if (optionalGameSaves) {
+        showToast("Sign in with Cloud Account first to sync game saves.");
+      }
+      return;
+    }
+
+    const bodyPayload = {
+      bookmarks: state.bookmarks,
+      settings: state.settings,
+    };
+    if (optionalGameSaves) {
+      bodyPayload.game_saves = optionalGameSaves;
+    }
 
     try {
       const res = await fetch("/api/user-data", {
@@ -550,14 +880,20 @@
           "Content-Type": "application/json",
           "X-Supabase-Token": tokens.access_token,
         },
-        body: JSON.stringify({
-          bookmarks: state.bookmarks,
-          settings: state.settings,
-        }),
+        body: JSON.stringify(bodyPayload),
       });
       const payload = await res.json();
 
       if (payload.fallbackDirect && tokens.user && tokens.user.id) {
+        const directBody = {
+          user_id: tokens.user.id,
+          bookmarks: state.bookmarks,
+          settings: state.settings,
+          updated_at: new Date().toISOString(),
+        };
+        if (optionalGameSaves) {
+          directBody.game_saves = optionalGameSaves;
+        }
         await fetch(
           state.supabase.url +
             "/rest/v1/ibossbad_user_data?on_conflict=user_id",
@@ -569,38 +905,65 @@
               Authorization: "Bearer " + tokens.access_token,
               Prefer: "resolution=merge-duplicates,return=minimal",
             },
-            body: JSON.stringify({
-              user_id: tokens.user.id,
-              bookmarks: state.bookmarks,
-              settings: state.settings,
-              updated_at: new Date().toISOString(),
-            }),
+            body: JSON.stringify(directBody),
           }
         );
       }
-    } catch (e) {
-      // ignore transient sync errors
-    }
+      if (optionalGameSaves) {
+        showToast("Synced game saves to Cloud!");
+      }
+    } catch (_e) {}
   }
 
-  // --- Tabs Management ---
+  // --- Tabs, Split-Screen, PiP & RAM Saver ---
   function getActiveTab() {
     return state.tabs.find((t) => t.id === state.activeTabId) || null;
   }
 
-  function createTab(initialUrl, switchImmediately) {
+  function sortTabsPinnedFirst() {
+    state.tabs.sort(
+      (a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned))
+    );
+  }
+
+  function persistOpenTabs() {
+    if (state.settings.ramSaver === false) return;
+    const saved = state.tabs
+      .filter((t) => t.url && !/^javascript:/i.test(t.url))
+      .map((t) => ({ url: t.url, pinned: Boolean(t.pinned) }));
+    saveJson(STORAGE_KEYS.OPEN_TABS, saved.slice(0, 14));
+  }
+
+  function tearDownAllTabs() {
+    state.tabs.forEach((t) => {
+      if (scramjetEngine) scramjetEngine.destroyTabFrame(t.id);
+      if (t.blobUrl) URL.revokeObjectURL(t.blobUrl);
+      if (t.iframe) t.iframe.remove();
+    });
+    state.tabs = [];
+    state.activeTabId = null;
+    localStorage.removeItem(STORAGE_KEYS.OPEN_TABS);
+    createTab("", true);
+  }
+
+  function createTab(initialUrl, switchImmediately, isPinned) {
     const id = "tab-" + state.nextTabNum++;
     const tab = {
       id: id,
       title: "New Tab",
       url: "",
+      pinned: Boolean(isPinned),
       iframe: null,
       blobUrl: null,
       history: [],
       historyIdx: -1,
       navToken: 0,
+      muted: false,
+      sleeping: false,
+      lastActiveTs: Date.now(),
     };
     state.tabs.push(tab);
+    sortTabsPinnedFirst();
 
     if (switchImmediately !== false) {
       state.activeTabId = id;
@@ -620,8 +983,9 @@
     if (tab.iframe) return tab.iframe;
     const stage = document.getElementById("iframesContainer");
     const iframe = document.createElement("iframe");
-    iframe.className = "proxy-iframe";
+    iframe.className = "proxy-iframe tab-iframe";
     iframe.dataset.tabId = tab.id;
+    iframe.dataset.muted = tab.muted ? "true" : "false";
     iframe.setAttribute(
       "allow",
       "fullscreen; autoplay; clipboard-read; clipboard-write; gamepad"
@@ -640,9 +1004,12 @@
             (loc.hash || "");
           tab.url = decoded.replace(/^(https?:\/)([^/])/i, "$1/$2");
         }
-      } catch (e) {
-        // cross-origin or blob fallback
-      }
+        if (window.IbossExtensions && iframe.contentWindow) {
+          window.IbossExtensions.applyModsAndExtensionsToWindow(
+            iframe.contentWindow
+          );
+        }
+      } catch (_e) {}
       renderTabs();
       if (tab.id === state.activeTabId) {
         updateOmniboxForTab(tab);
@@ -653,7 +1020,7 @@
     return iframe;
   }
 
-  function buildErrorBlobUrl(targetUrl, errMsg) {
+  function buildErrorBlobUrl(targetUrl, errMsg, tabId) {
     const safeUrl = String(targetUrl)
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
@@ -662,32 +1029,93 @@
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;");
     const html =
-      '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Connection Error</title>' +
+      '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Blocked / Error</title>' +
       "<style>body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0b0f19;color:#e2e8f0;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}" +
       ".card{max-width:490px;width:100%;background:#131a2b;border:1px solid #1e293b;border-radius:16px;padding:28px;box-shadow:0 20px 40px rgba(0,0,0,.45)}" +
       "h1{margin:0 0 10px;font-size:20px;color:#f8fafc}p{margin:0 0 14px;color:#94a3b8;line-height:1.5;font-size:14px}" +
       "code{display:block;background:#090d16;border:1px solid #1e293b;padding:10px 12px;border-radius:8px;color:#f87171;font-size:12px;word-break:break-all;margin-bottom:18px}" +
-      ".btns{display:flex;gap:10px;flex-wrap:wrap}button{background:#0ea5e9;color:#fff;border:0;border-radius:8px;padding:9px 16px;font-weight:600;cursor:pointer;font-size:13px}button.alt{background:#1e293b;color:#cbd5e1}</style></head>" +
-      '<body><div class="card"><h1>Couldn\'t load that site</h1>' +
-      "<p>WISP could not reach <strong>" +
+      ".btns{display:flex;gap:10px;flex-wrap:wrap}button{background:#0ea5e9;color:#fff;border:0;border-radius:8px;padding:9px 16px;font-weight:600;cursor:pointer;font-size:13px}</style></head>" +
+      '<body><div class="card"><h1>Unable to open site</h1>' +
+      "<p>Target: <strong>" +
       safeUrl +
-      "</strong>. Check the domain spelling or switch relays in Settings.</p>" +
+      "</strong></p>" +
       "<code>" +
       safeErr +
       "</code>" +
       '<div class="btns">' +
       "<button onclick=\"window.top.postMessage({__ibossWisp:true,tabId:'" +
-      "__TAB__" +
+      String(tabId || "") +
       "',action:'reload'},'*')\">Retry</button>" +
       "</div></div></body></html>";
     return URL.createObjectURL(new Blob([html], { type: "text/html" }));
+  }
+
+  function executeJavascriptInActiveTab(jsUriOrCode) {
+    const code = String(jsUriOrCode).replace(/^javascript:\s*/i, "");
+    let decoded = code;
+    try {
+      decoded = decodeURIComponent(code);
+    } catch (_e) {}
+    const tab = getActiveTab();
+    try {
+      const targetWin =
+        tab && tab.iframe && tab.iframe.contentWindow
+          ? tab.iframe.contentWindow
+          : window;
+      const result = targetWin.eval(decoded);
+      appendConsoleLine("> " + decoded, result);
+      showToast("Executed javascript: snippet");
+    } catch (err) {
+      appendConsoleLine("Error: " + (err && err.message ? err.message : err));
+      showToast("Script error: " + (err.message || err));
+    }
   }
 
   async function navigateTab(tab, rawOrResolvedUrl, pushToHistory) {
     const resolved = resolveInputToUrl(rawOrResolvedUrl);
     if (!resolved) return;
 
+    // 1) javascript: bookmarklet execution
+    if (/^javascript:/i.test(resolved)) {
+      executeJavascriptInActiveTab(resolved);
+      return;
+    }
+
+    tab.sleeping = false;
+    tab.lastActiveTs = Date.now();
     const myToken = ++tab.navToken;
+
+    // 2) iboss:// internal protocol pages
+    if (isInternalUrl(resolved)) {
+      if (resolved === "iboss://settings") {
+        openSettingsModal();
+        return;
+      }
+      if (resolved === "iboss://newtab") {
+        tab.url = "";
+        tab.title = "New Tab";
+        if (tab.iframe) {
+          tab.iframe.remove();
+          tab.iframe = null;
+        }
+        renderTabs();
+        updateViewportForActiveTab();
+        persistOpenTabs();
+        return;
+      }
+      tab.url = resolved;
+      tab.title = resolved.replace(/^iboss:\/\//i, "").toUpperCase();
+      if (pushToHistory !== false && tab.history[tab.historyIdx] !== resolved) {
+        tab.history = tab.history.slice(0, tab.historyIdx + 1);
+        tab.history.push(resolved);
+        tab.historyIdx = tab.history.length - 1;
+      }
+      renderTabs();
+      updateViewportForActiveTab();
+      persistOpenTabs();
+      return;
+    }
+
     tab.url = resolved;
     tab.title = getDomain(resolved);
 
@@ -702,8 +1130,29 @@
     const iframe = ensureIframeForTab(tab);
     renderTabs();
     updateViewportForActiveTab();
+    persistOpenTabs();
 
-    // 1) Classic Server Stream (/proxy/) engine
+    // Policy check + Access Log recording across all engines
+    try {
+      const checkRes = await fetch(
+        "/api/check-url?url=" +
+          encodeURIComponent(resolved) +
+          "&engine=" +
+          encodeURIComponent(state.settings.proxyEngine)
+      );
+      if (checkRes.status === 403 || checkRes.status === 503) {
+        const checkData = await checkRes.json();
+        tab.blobUrl = buildErrorBlobUrl(
+          resolved,
+          (checkData && checkData.reason) || "Blocked by instance policy.",
+          tab.id
+        );
+        iframe.src = tab.blobUrl;
+        return;
+      }
+    } catch (_e) {}
+
+    // Classic Server Stream (/proxy/) engine
     if (state.settings.proxyEngine === "stream") {
       if (tab.blobUrl) {
         URL.revokeObjectURL(tab.blobUrl);
@@ -713,7 +1162,7 @@
       return;
     }
 
-    // 2) Flagship Scramjet Service Worker + BareMux WISP engine (with automatic GUST fallback)
+    // Flagship Scramjet Service Worker + BareMux WISP engine
     if (state.settings.proxyEngine === "scramjet" && scramjetEngine) {
       if (tab.id === state.activeTabId) {
         setLoadingProgress(true, "Starting Scramjet...");
@@ -760,7 +1209,7 @@
       }
     }
 
-    // 3) SW-Free GUST Blob WISP + WASM libcurl engine
+    // SW-Free GUST Blob WISP fallback
     if (!wispEngine) {
       iframe.src = buildProxiedPath(resolved);
       return;
@@ -813,7 +1262,15 @@
   function closeTab(tabId) {
     const idx = state.tabs.findIndex((t) => t.id === tabId);
     if (idx === -1) return;
+    if (state.tabs[idx].pinned) {
+      showToast("Unpin tab first before closing.");
+      return;
+    }
     const [removed] = state.tabs.splice(idx, 1);
+    if (removed.url) {
+      state.closedTabs.unshift({ url: removed.url, title: removed.title });
+      if (state.closedTabs.length > 15) state.closedTabs.length = 15;
+    }
     if (scramjetEngine) {
       scramjetEngine.destroyTabFrame(tabId);
     }
@@ -836,19 +1293,57 @@
 
     renderTabs();
     updateViewportForActiveTab();
+    persistOpenTabs();
+  }
+
+  function reopenClosedTab() {
+    const entry = state.closedTabs.shift();
+    if (!entry || !entry.url) {
+      showToast("No recently closed tabs to reopen.");
+      return;
+    }
+    createTab(entry.url, true);
+    showToast("Reopened: " + (entry.title || entry.url));
+  }
+
+  function togglePinTab(tabId) {
+    const tab = state.tabs.find((t) => t.id === tabId);
+    if (!tab) return;
+    tab.pinned = !tab.pinned;
+    sortTabsPinnedFirst();
+    renderTabs();
+    persistOpenTabs();
+    showToast(tab.pinned ? "Pinned tab" : "Unpinned tab");
   }
 
   function switchTab(tabId) {
     state.activeTabId = tabId;
+    const tab = getActiveTab();
+    if (tab) {
+      tab.lastActiveTs = Date.now();
+      if (tab.sleeping && tab.url) {
+        tab.sleeping = false;
+        navigateTab(tab, tab.url, false);
+        return;
+      }
+    }
     setLoadingProgress(false, "");
     renderTabs();
     updateViewportForActiveTab();
+  }
+
+  function updateMuteButtonUI() {
+    const btn = document.getElementById("muteTabBtn");
+    const tab = getActiveTab();
+    if (!btn) return;
+    btn.style.color = tab && tab.muted ? "var(--danger)" : "";
   }
 
   function updateOmniboxForTab(tab) {
     const input = document.getElementById("omniboxInput");
     const bmBtn = document.getElementById("bookmarkToggleBtn");
     const starIcon = document.getElementById("bookmarkStarIcon");
+    updateMuteButtonUI();
     if (!tab || !tab.url) {
       input.value = "";
       bmBtn.classList.add("hidden");
@@ -864,22 +1359,60 @@
   function updateViewportForActiveTab() {
     const activeTab = getActiveTab();
     const newTabView = document.getElementById("newTabView");
+    const internalView = document.getElementById("internalPageView");
     const iframesStage = document.getElementById("iframesContainer");
+
+    const url = (activeTab && activeTab.url) || "";
+    const internal = isInternalUrl(url);
+
+    // Pause background particles whenever an active external game/site is showing
+    particlesActive = !url;
+
+    // Determine secondary tab if Split-Screen mode is active
+    let secondaryTabId = null;
+    if (state.splitMode) {
+      const other = state.tabs.find(
+        (t) =>
+          t.id !== (activeTab && activeTab.id) &&
+          t.url &&
+          !isInternalUrl(t.url) &&
+          t.iframe
+      );
+      if (other) secondaryTabId = other.id;
+    }
+
+    iframesStage.classList.toggle(
+      "split-active",
+      Boolean(state.splitMode && secondaryTabId)
+    );
 
     state.tabs.forEach((t) => {
       if (t.iframe) {
-        t.iframe.classList.toggle(
-          "active",
-          Boolean(activeTab && t.id === activeTab.id && t.url)
+        const isPrimary = Boolean(
+          activeTab && t.id === activeTab.id && t.url && !internal
         );
+        const isSecondary = Boolean(secondaryTabId && t.id === secondaryTabId);
+        t.iframe.classList.toggle("active", isPrimary);
+        t.iframe.classList.toggle("split-visible", isPrimary || isSecondary);
       }
     });
 
-    if (!activeTab || !activeTab.url) {
+    if (!url) {
       newTabView.classList.remove("hidden");
+      internalView.classList.add("hidden");
       iframesStage.classList.add("hidden");
+    } else if (internal) {
+      newTabView.classList.add("hidden");
+      iframesStage.classList.add("hidden");
+      internalView.classList.remove("hidden");
+      if (url === "iboss://admin" && adminPanel) {
+        adminPanel.open(internalView);
+      } else if (internalPages) {
+        internalPages.render(url, internalView);
+      }
     } else {
       newTabView.classList.add("hidden");
+      internalView.classList.add("hidden");
       iframesStage.classList.remove("hidden");
     }
 
@@ -893,38 +1426,153 @@
     state.tabs.forEach((tab) => {
       const el = document.createElement("div");
       el.className =
-        "browser-tab" + (tab.id === state.activeTabId ? " active" : "");
+        "browser-tab tab-item" +
+        (tab.id === state.activeTabId ? " active" : "") +
+        (tab.pinned ? " pinned" : "");
       el.setAttribute("role", "tab");
+      el.title = (tab.title || "New Tab") + " (Right-click to Pin/Unpin)";
 
       const badge = document.createElement("span");
       badge.className = "tab-favicon";
-      badge.textContent = tab.url
-        ? getDomain(tab.url).charAt(0).toUpperCase()
+      badge.textContent = tab.muted
+        ? "🔇"
+        : tab.sleeping
+        ? "💤"
+        : tab.url
+        ? getDomain(tab.url)
+            .replace(/^iboss:\/\//, "")
+            .charAt(0)
+            .toUpperCase()
         : "+";
 
       const title = document.createElement("span");
       title.className = "tab-title";
       title.textContent = tab.title || "New Tab";
 
-      const close = document.createElement("button");
-      close.type = "button";
-      close.className = "tab-close";
-      close.title = "Close Tab";
-      close.textContent = "×";
-      close.addEventListener("click", (ev) => {
+      const pinBtn = document.createElement("button");
+      pinBtn.type = "button";
+      pinBtn.className = "tab-pin-btn";
+      pinBtn.title = tab.pinned ? "Unpin Tab" : "Pin Tab";
+      pinBtn.textContent = "📌";
+      pinBtn.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        closeTab(tab.id);
+        togglePinTab(tab.id);
       });
 
+      el.addEventListener("contextmenu", (ev) => {
+        ev.preventDefault();
+        togglePinTab(tab.id);
+      });
       el.addEventListener("click", () => switchTab(tab.id));
       el.appendChild(badge);
       el.appendChild(title);
-      el.appendChild(close);
+      el.appendChild(pinBtn);
+
+      if (!tab.pinned) {
+        const close = document.createElement("button");
+        close.type = "button";
+        close.className = "tab-close";
+        close.title = "Close Tab";
+        close.textContent = "×";
+        close.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          closeTab(tab.id);
+        });
+        el.appendChild(close);
+      }
+
       container.appendChild(el);
     });
   }
 
-  // --- Quick Links, Bookmarks Bar & Bookmarks Grid ---
+  // --- Floating Mini-Window (PiP) ---
+  function openMiniPlayer(targetUrl, titleText, isRawBlob) {
+    const winEl = document.getElementById("miniPlayerWindow");
+    const frameEl = document.getElementById("miniPlayerFrame");
+    const titleEl = document.getElementById("miniPlayerTitle");
+    if (!winEl || !frameEl) return;
+    titleEl.textContent = titleText || "Mini Window";
+    winEl.classList.remove("hidden");
+
+    if (isRawBlob) {
+      frameEl.src = targetUrl;
+      return;
+    }
+    if (state.settings.proxyEngine === "scramjet" && scramjetEngine) {
+      scramjetEngine
+        .navigateTabFrame("mini-pip", frameEl, targetUrl)
+        .catch(() => {
+          frameEl.src = buildProxiedPath(targetUrl);
+        });
+    } else {
+      frameEl.src = buildProxiedPath(targetUrl);
+    }
+  }
+
+  function initDraggableMiniPlayer() {
+    const winEl = document.getElementById("miniPlayerWindow");
+    const headerEl = document.getElementById("miniPlayerHeader");
+    const closeBtn = document.getElementById("closeMiniPlayerBtn");
+    if (!winEl || !headerEl || !closeBtn) return;
+
+    closeBtn.addEventListener("click", () => {
+      winEl.classList.add("hidden");
+      document.getElementById("miniPlayerFrame").src = "about:blank";
+    });
+
+    let dragging = false;
+    let startX = 0;
+    let startY = 0;
+    let origLeft = 0;
+    let origTop = 0;
+
+    headerEl.addEventListener("mousedown", (ev) => {
+      if (ev.target === closeBtn) return;
+      dragging = true;
+      const rect = winEl.getBoundingClientRect();
+      startX = ev.clientX;
+      startY = ev.clientY;
+      origLeft = rect.left;
+      origTop = rect.top;
+      winEl.style.right = "auto";
+      winEl.style.bottom = "auto";
+      winEl.style.left = origLeft + "px";
+      winEl.style.top = origTop + "px";
+    });
+
+    window.addEventListener("mousemove", (ev) => {
+      if (!dragging) return;
+      winEl.style.left = Math.max(0, origLeft + (ev.clientX - startX)) + "px";
+      winEl.style.top = Math.max(0, origTop + (ev.clientY - startY)) + "px";
+    });
+    window.addEventListener("mouseup", () => {
+      dragging = false;
+    });
+  }
+
+  // --- Unblocked DevTools Console Drawer ---
+  function appendConsoleLine(label, value) {
+    const out = document.getElementById("devtoolsOutput");
+    if (!out) return;
+    if (out.querySelector(".empty-bookmarks")) out.innerHTML = "";
+    const row = document.createElement("div");
+    row.className = "log-row";
+    let formatted = label;
+    if (arguments.length > 1) {
+      try {
+        formatted +=
+          " -> " +
+          (typeof value === "object" ? JSON.stringify(value) : String(value));
+      } catch (_e) {
+        formatted += " -> [Object]";
+      }
+    }
+    row.textContent = formatted;
+    out.appendChild(row);
+    out.scrollTop = out.scrollHeight;
+  }
+
+  // --- Quick Links & Bookmarks ---
   function renderQuickLinks() {
     const grid = document.getElementById("quickLinksGrid");
     grid.innerHTML = "";
@@ -1067,7 +1715,105 @@
     pushToCloud();
   }
 
-  // --- Auth Gate & Account Logic ---
+  // --- Camouflage Front Door + Auth Gate + Passcode-Locked Account ---
+  function initCamouflageSuite() {
+    let timerSecs = 25 * 60;
+    let timerId = null;
+    const disp = document.getElementById("camoTimerDisplay");
+    function drawTimer() {
+      const m = String(Math.floor(timerSecs / 60)).padStart(2, "0");
+      const s = String(timerSecs % 60).padStart(2, "0");
+      if (disp) disp.textContent = m + ":" + s;
+    }
+    document
+      .getElementById("camoStartTimerBtn")
+      .addEventListener("click", (ev) => {
+        if (timerId) {
+          clearInterval(timerId);
+          timerId = null;
+          ev.target.textContent = "Start Focus";
+        } else {
+          ev.target.textContent = "Pause";
+          timerId = setInterval(() => {
+            if (timerSecs > 0) timerSecs--;
+            drawTimer();
+          }, 1000);
+        }
+      });
+    document
+      .getElementById("camoResetTimerBtn")
+      .addEventListener("click", () => {
+        timerSecs = 25 * 60;
+        drawTimer();
+      });
+    document
+      .getElementById("camoBreakTimerBtn")
+      .addEventListener("click", () => {
+        timerSecs = 5 * 60;
+        drawTimer();
+      });
+
+    document.getElementById("camoCalcEvalBtn").addEventListener("click", () => {
+      const raw = document.getElementById("camoCalcInput").value;
+      const out = document.getElementById("camoCalcResult");
+      if (!/^[0-9+\-*/().%\s]+$/.test(raw)) {
+        out.textContent = "= Invalid";
+        return;
+      }
+      try {
+        // eslint-disable-next-line no-new-func
+        const val = Function('"use strict"; return (' + raw + ");")();
+        out.textContent = "= " + Number(val.toFixed(6));
+      } catch (_e) {
+        out.textContent = "= Error";
+      }
+    });
+
+    // Secret Unlock Trigger 1: Join Study Room Form
+    document
+      .getElementById("camoRoomForm")
+      .addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        const code = document.getElementById("camoCodeInput").value.trim();
+        if (!code) {
+          state.camoRevealed = true;
+          refreshGateVisibility();
+          return;
+        }
+        const res = await fetch("/api/auth/passcode", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ passcode: code }),
+        });
+        const data = await res.json();
+        if (res.ok && data.ok) {
+          state.authenticated = true;
+          state.camoRevealed = true;
+          state.user = data.user;
+          document.getElementById("camoCodeInput").value = "";
+          refreshGateVisibility();
+          showToast("Browser unlocked");
+        } else {
+          state.camoRevealed = true;
+          refreshGateVisibility();
+          setGateAlert(data.error || "Enter valid passcode or 12h key.");
+        }
+      });
+
+    // Secret Unlock Trigger 2: Triple-click footer version
+    let footerClicks = 0;
+    document
+      .getElementById("camoVersionTrigger")
+      .addEventListener("click", () => {
+        footerClicks++;
+        if (footerClicks >= 3) {
+          footerClicks = 0;
+          state.camoRevealed = true;
+          refreshGateVisibility();
+        }
+      });
+  }
+
   function setGateAlert(msg) {
     const alertBox = document.getElementById("gateAlert");
     if (!msg) {
@@ -1104,9 +1850,13 @@
     const label = document.getElementById("accountBadgeLabel");
     if (state.user && state.user.mode === "supabase") {
       dot.classList.add("synced");
-      label.textContent = state.user.email
-        ? state.user.email.split("@")[0]
-        : "Cloud Synced";
+      const roleTag =
+        state.user.role && state.user.role !== "USER"
+          ? " [" + state.user.role + "]"
+          : "";
+      label.textContent =
+        (state.user.email ? state.user.email.split("@")[0] : "Synced") +
+        roleTag;
     } else {
       dot.classList.remove("synced");
       label.textContent = "Sign In / Sync";
@@ -1114,8 +1864,20 @@
   }
 
   function refreshGateVisibility() {
+    const camoGate = document.getElementById("camoGate");
     const gate = document.getElementById("authGate");
     const passTab = document.getElementById("gateTabPasscode");
+    const gateCodeRow = document.getElementById("accountGateCodeRow");
+    const gateCodeInput = document.getElementById("accountGateCode");
+    const llBtn = document.getElementById("lootlabsClaimBtn");
+
+    if (llBtn) {
+      llBtn.classList.toggle(
+        "hidden",
+        !(state.lootlabs && state.lootlabs.enabled)
+      );
+    }
+
     if (!state.passcodeEnabled) {
       passTab.classList.add("hidden");
       switchGateTab("account");
@@ -1123,17 +1885,57 @@
       passTab.classList.remove("hidden");
     }
 
-    if (!state.authenticated || state.gateForceOpen) {
+    // Require site passcode on Cloud Account form whenever not yet unlocked
+    const needPasscodeOnAccount = state.passcodeEnabled && !state.authenticated;
+    if (gateCodeRow && gateCodeInput) {
+      gateCodeRow.classList.toggle("hidden", !needPasscodeOnAccount);
+      gateCodeInput.required = needPasscodeOnAccount;
+    }
+
+    if (
+      !state.authenticated &&
+      state.camouflageServerEnabled &&
+      !state.camoRevealed
+    ) {
+      camoGate.classList.remove("hidden");
+      gate.classList.add("hidden");
+    } else if (!state.authenticated || state.gateForceOpen) {
+      camoGate.classList.add("hidden");
       gate.classList.remove("hidden");
     } else {
+      camoGate.classList.add("hidden");
       gate.classList.add("hidden");
     }
     updateAccountBadge();
   }
 
+  function maybeShowMotdModal() {
+    if (
+      !state.authenticated ||
+      !state.motd ||
+      !state.motd.enabled ||
+      !state.motd.body
+    ) {
+      return;
+    }
+    const seenId = localStorage.getItem("ibossbad_ack_motd_v1");
+    if (seenId === String(state.motd.id)) return;
+    const modal = document.getElementById("motdModal");
+    if (!modal) return;
+    document.getElementById("motdModalTitle").textContent =
+      state.motd.title || "Announcement";
+    document.getElementById("motdModalBody").textContent = state.motd.body;
+    modal.classList.remove("hidden");
+  }
+
   function handlePostUnlockRedirect() {
+    maybeShowMotdModal();
     const params = new URLSearchParams(window.location.search);
     const pendingUrl = params.get("url");
+    if (params.get("key_claimed") === "1") {
+      window.history.replaceState({}, "", "/");
+      showToast("12-Hour Access Key activated!");
+    }
     if (pendingUrl) {
       window.history.replaceState({}, "", "/");
       const tab = getActiveTab() || createTab("", true);
@@ -1155,7 +1957,7 @@
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
-        setGateAlert(data.error || "Incorrect passcode.");
+        setGateAlert(data.error || "Incorrect passcode or key.");
         return;
       }
       state.authenticated = true;
@@ -1167,7 +1969,7 @@
       if (wispEngine) wispEngine.reconnect().catch(() => {});
       handlePostUnlockRedirect();
       showToast("Browser unlocked");
-    } catch (err) {
+    } catch (_err) {
       setGateAlert("Network error verifying passcode.");
     } finally {
       btn.disabled = false;
@@ -1179,8 +1981,14 @@
     setGateAlert("");
     const email = document.getElementById("authEmail").value.trim();
     const password = document.getElementById("authPassword").value;
-    if (!email || !password) {
-      setGateAlert("Please enter your email and password.");
+    const gateCode = document.getElementById("accountGateCode").value;
+
+    if (!email || !password || password.length < 6) {
+      setGateAlert("Enter a valid email and password (at least 6 characters).");
+      return;
+    }
+    if (state.passcodeEnabled && !state.authenticated && !gateCode) {
+      setGateAlert("Site Passcode or 12h Key is required.");
       return;
     }
 
@@ -1194,9 +2002,15 @@
       const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, passcode: gateCode }),
       });
       const payload = await res.json();
+
+      // If passcode was wrong (401/429), block immediately before any fallback!
+      if (res.status === 401 || res.status === 429) {
+        setGateAlert(payload.error || "Invalid site passcode.");
+        return;
+      }
 
       let sessionObj = payload.ok ? payload.session : null;
 
@@ -1219,34 +2033,35 @@
           directData &&
           (directData.user || (directData.id ? directData : null));
 
-        if (!directRes.ok || !directUser) {
+        if (!directRes.ok || !directUser || !directData.access_token) {
           setGateAlert(
             (directData &&
               (directData.error_description ||
                 directData.msg ||
                 directData.message)) ||
-              "Authentication failed."
+              "Authentication failed (check email confirmation or credentials)."
           );
           return;
         }
 
-        if (directData.access_token) {
-          const tokenRes = await fetch("/api/auth/token-session", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ access_token: directData.access_token }),
-          });
-          const tokenPayload = await tokenRes.json();
-          if (!tokenRes.ok || !tokenPayload.ok) {
-            setGateAlert(tokenPayload.error || "Unable to establish session.");
-            return;
-          }
+        const tokenRes = await fetch("/api/auth/token-session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            access_token: directData.access_token,
+            passcode: gateCode,
+          }),
+        });
+        const tokenPayload = await tokenRes.json();
+        if (!tokenRes.ok || !tokenPayload.ok) {
+          setGateAlert(tokenPayload.error || "Unable to establish session.");
+          return;
         }
 
         sessionObj = {
-          access_token: directData.access_token || null,
+          access_token: directData.access_token,
           refresh_token: directData.refresh_token || null,
-          user: {
+          user: tokenPayload.user || {
             id: directUser.id,
             email: directUser.email,
             mode: "supabase",
@@ -1265,14 +2080,15 @@
       state.gateForceOpen = false;
       state.user = sessionObj.user;
       document.getElementById("authPassword").value = "";
+      document.getElementById("accountGateCode").value = "";
       refreshGateVisibility();
       if (scramjetEngine) scramjetEngine.reconnect().catch(() => {});
       if (wispEngine) wispEngine.reconnect().catch(() => {});
-      await syncFromCloud();
+      await syncFromCloud(false);
       await pushToCloud();
       handlePostUnlockRedirect();
       showToast(isSignup ? "Account created & synced!" : "Signed in & synced!");
-    } catch (err) {
+    } catch (_err) {
       setGateAlert("Unable to reach authentication service.");
     } finally {
       btn.disabled = false;
@@ -1284,9 +2100,197 @@
     setStoredSupabaseTokens(null);
     state.user = null;
     state.authenticated = !state.authRequired;
+    tearDownAllTabs();
     document.getElementById("settingsModal").classList.add("hidden");
     refreshGateVisibility();
-    showToast("Signed out");
+    showToast("Locked & signed out");
+  }
+
+  // --- Live Presence Heartbeat, 12h Key Timer & Instance Chat ---
+  function updateKeyCountdownPill() {
+    const pill = document.getElementById("keyTimerPill");
+    if (!pill) return;
+    const exp = state.user && state.user.keyExpiresAt;
+    if (!exp || (state.user && state.user.role === "VIP")) {
+      pill.classList.add("hidden");
+      return;
+    }
+    const diff = exp - Date.now();
+    if (diff <= 0) {
+      pill.classList.add("hidden");
+      logoutSession();
+      setGateAlert("Your temporary access key has expired.");
+      return;
+    }
+    const h = Math.floor(diff / 3600000);
+    const m = Math.floor((diff % 3600000) / 60000);
+    const s = Math.floor((diff % 60000) / 1000);
+    pill.textContent =
+      "Key: " +
+      h +
+      "h " +
+      String(m).padStart(2, "0") +
+      "m " +
+      String(s).padStart(2, "0") +
+      "s";
+    pill.classList.remove("hidden");
+  }
+
+  async function sendPresenceHeartbeat() {
+    if (!state.authenticated) return;
+    const tab = getActiveTab();
+    try {
+      const res = await fetch("/api/presence/heartbeat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: (tab && tab.url) || "iboss://newtab",
+          title: (tab && tab.title) || "New Tab",
+          engine: state.settings.proxyEngine,
+        }),
+      });
+      if (res.status === 401 || res.status === 403) {
+        logoutSession();
+        return;
+      }
+      const data = await res.json();
+      if (data.revoked) {
+        logoutSession();
+        return;
+      }
+
+      // Broadcast Banner
+      const banner = document.getElementById("broadcastBanner");
+      const bText = document.getElementById("broadcastText");
+      if (
+        data.broadcast &&
+        data.broadcast.text &&
+        data.broadcast.createdAt !== state.dismissedBroadcastTs
+      ) {
+        banner.className =
+          "broadcast-banner " + (data.broadcast.level || "info");
+        bText.textContent = "📢 " + data.broadcast.text;
+        banner.dataset.ts = String(data.broadcast.createdAt || 0);
+      } else {
+        banner.classList.add("hidden");
+      }
+
+      // Freeze Screen
+      const freezeEl = document.getElementById("freezeOverlay");
+      if (data.frozen) {
+        document.getElementById("freezeMessageText").textContent =
+          data.freezeMessage || "Paused by Administrator.";
+        freezeEl.classList.remove("hidden");
+      } else {
+        freezeEl.classList.add("hidden");
+      }
+
+      // Remote Admin Commands
+      if (Array.isArray(data.commands)) {
+        data.commands.forEach((cmd) => {
+          if (cmd.type === "cloak") {
+            setDecoyOverlay(true);
+          } else if (cmd.type === "redirect" && cmd.data && cmd.data.url) {
+            const cur = getActiveTab() || createTab("", true);
+            navigateTab(cur, cmd.data.url, true);
+          } else if (cmd.type === "popup" && cmd.data && cmd.data.message) {
+            window.alert("Message from Admin:\n\n" + cmd.data.message);
+          }
+        });
+      }
+    } catch (_e) {}
+  }
+
+  async function refreshChatMessages() {
+    const drawer = document.getElementById("chatDrawer");
+    if (!drawer || drawer.classList.contains("hidden")) return;
+    try {
+      const r = await fetch("/api/chat");
+      const d = await r.json();
+      const list = document.getElementById("chatMessagesList");
+      const pollBox = document.getElementById("chatPollBox");
+
+      if (pollBox) {
+        if (d.poll && d.poll.options) {
+          const safeQ = String(d.poll.question || "").replace(/</g, "&lt;");
+          pollBox.innerHTML =
+            "<div><strong>📊 " +
+            safeQ +
+            '</strong> <span class="relay-mini-badge">' +
+            d.poll.totalVotes +
+            " votes</span></div>" +
+            d.poll.options
+              .map(
+                (o) =>
+                  '<button type="button" class="poll-opt-btn" data-vote-opt="' +
+                  o.id +
+                  '"><span>' +
+                  String(o.label).replace(/</g, "&lt;") +
+                  "</span><strong>" +
+                  o.votes +
+                  "</strong></button>"
+              )
+              .join("");
+          pollBox.classList.remove("hidden");
+          pollBox.querySelectorAll("[data-vote-opt]").forEach((b) => {
+            b.addEventListener("click", async () => {
+              await fetch("/api/chat/vote", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  optionId: b.getAttribute("data-vote-opt"),
+                }),
+              });
+              refreshChatMessages();
+            });
+          });
+        } else {
+          pollBox.classList.add("hidden");
+          pollBox.innerHTML = "";
+        }
+      }
+
+      if (!d.enabled) {
+        list.innerHTML =
+          '<div class="empty-bookmarks">Chat is currently disabled by Admin.</div>';
+        return;
+      }
+      if (!d.messages || !d.messages.length) {
+        list.innerHTML =
+          '<div class="empty-bookmarks">No messages yet — say hi!</div>';
+        return;
+      }
+      list.innerHTML = d.messages
+        .map((m) => {
+          const badge =
+            m.role && m.role !== "USER"
+              ? '<span class="chat-badge-' + m.role + '">' + m.role + "</span> "
+              : "";
+          const safeAuthor = String(m.author || "user").replace(/</g, "&lt;");
+          const safeText = String(m.text || "").replace(/</g, "&lt;");
+          return (
+            '<div class="log-row" style="flex-wrap:wrap">' +
+            badge +
+            "<strong>" +
+            safeAuthor +
+            ":</strong> <span>" +
+            safeText +
+            "</span></div>"
+          );
+        })
+        .join("");
+      list.scrollTop = list.scrollHeight;
+    } catch (_e) {}
+  }
+
+  async function reloadCustomGames() {
+    try {
+      const r = await fetch("/api/games");
+      const d = await r.json();
+      if (d && Array.isArray(d.customGames)) {
+        state.customGames = d.customGames;
+      }
+    } catch (_e) {}
   }
 
   // --- Settings Modal ---
@@ -1340,6 +2344,19 @@
     document.getElementById("shieldModeSelect").value =
       state.settings.shieldEnabled === false ? "off" : "on";
 
+    document.getElementById("themePresetSelect").value =
+      state.settings.themePreset || "midnight";
+    document
+      .getElementById("customThemePickers")
+      .classList.toggle("hidden", state.settings.themePreset !== "custom");
+    const cc = state.settings.customColors || DEFAULT_SETTINGS.customColors;
+    document.getElementById("colBgPrimary").value = cc.bgBase || "#090d16";
+    document.getElementById("colBgSurface").value = cc.bgSurface || "#111827";
+    document.getElementById("colAccent").value = cc.accent || "#0ea5e9";
+    document.getElementById("colText").value = cc.textPrimary || "#f1f5f9";
+    document.getElementById("particlesSelect").value =
+      state.settings.particlesEnabled === false ? "off" : "on";
+
     const customFields = document.getElementById("customCloakFields");
     customFields.classList.toggle("hidden", state.settings.cloak !== "custom");
     document.getElementById("customCloakTitle").value =
@@ -1347,10 +2364,28 @@
     document.getElementById("customCloakIcon").value =
       state.settings.customIcon || "";
 
+    document.getElementById("autoCloakBlurSelect").value = state.settings
+      .autoCloakBlur
+      ? "on"
+      : "off";
+    document.getElementById("antiCloseSelect").value = state.settings.antiClose
+      ? "on"
+      : "off";
+    document.getElementById("ramSaverSelect").value =
+      state.settings.ramSaver === false ? "off" : "on";
+
     document.getElementById("currentPanicKeyLabel").textContent =
       state.settings.panicKey || "`";
     document.getElementById("panicUrlInput").value =
       state.settings.panicUrl || "https://classroom.google.com";
+    const decoySel = document.getElementById("decoyTemplateSelect");
+    if (decoySel) {
+      decoySel.value = state.settings.decoyTemplate || "gdocs";
+    }
+    document.getElementById("hkGamesInput").value =
+      state.settings.hkGames || "Alt+G";
+    document.getElementById("hkSplitInput").value =
+      state.settings.hkSplit || "Alt+S";
 
     const sessionBox = document.getElementById("sessionInfoBox");
     sessionBox.innerHTML = "";
@@ -1360,10 +2395,15 @@
         "Signed in as " +
         (state.user.email || "Cloud User") +
         " (Cloud Sync active)";
+    } else if (
+      state.user &&
+      (state.user.mode === "key" || state.user.mode === "temp_key")
+    ) {
+      infoText.textContent = "Unlocked with Temporary Access Key";
     } else if (state.user && state.user.mode === "passcode") {
-      infoText.textContent = "Unlocked with Passcode (Local storage only)";
+      infoText.textContent = "Unlocked with Passcode";
     } else {
-      infoText.textContent = "Local session (Sign in to sync across devices)";
+      infoText.textContent = "Local session";
     }
     sessionBox.appendChild(infoText);
 
@@ -1411,29 +2451,156 @@
     state.settings.shieldEnabled =
       document.getElementById("shieldModeSelect").value !== "off";
 
+    state.settings.themePreset =
+      document.getElementById("themePresetSelect").value || "midnight";
+    state.settings.customColors = {
+      bgBase: document.getElementById("colBgPrimary").value,
+      bgSurface: document.getElementById("colBgSurface").value,
+      accent: document.getElementById("colAccent").value,
+      textPrimary: document.getElementById("colText").value,
+    };
+    state.settings.particlesEnabled =
+      document.getElementById("particlesSelect").value !== "off";
+
     state.settings.customTitle = document
       .getElementById("customCloakTitle")
       .value.trim();
     state.settings.customIcon = document
       .getElementById("customCloakIcon")
       .value.trim();
+    state.settings.autoCloakBlur =
+      document.getElementById("autoCloakBlurSelect").value === "on";
+    state.settings.antiClose =
+      document.getElementById("antiCloseSelect").value === "on";
+    state.settings.ramSaver =
+      document.getElementById("ramSaverSelect").value !== "off";
+
     state.settings.panicUrl =
       document.getElementById("panicUrlInput").value.trim() ||
       "https://classroom.google.com";
+    const decoySel = document.getElementById("decoyTemplateSelect");
+    if (decoySel) {
+      state.settings.decoyTemplate = decoySel.value || "gdocs";
+    }
+    state.settings.hkGames =
+      document.getElementById("hkGamesInput").value.trim() || "Alt+G";
+    state.settings.hkSplit =
+      document.getElementById("hkSplitInput").value.trim() || "Alt+S";
 
     saveJson(STORAGE_KEYS.SETTINGS, state.settings);
+    applyTheme();
     applyCloak();
     applyWispConfiguration();
     syncToolbarSettings();
     pushToCloud();
     document.getElementById("settingsModal").classList.add("hidden");
-    showToast("Settings saved & applied");
+    showToast("Settings & theme applied");
+  }
+
+  function matchesShortcut(ev, comboStr) {
+    if (!comboStr) return false;
+    const parts = comboStr
+      .toLowerCase()
+      .split("+")
+      .map((s) => s.trim());
+    const needAlt = parts.includes("alt");
+    const needCtrl = parts.includes("ctrl") || parts.includes("control");
+    const needShift = parts.includes("shift");
+    const keyPart = parts[parts.length - 1];
+    return (
+      Boolean(ev.altKey) === needAlt &&
+      Boolean(ev.ctrlKey) === needCtrl &&
+      Boolean(ev.shiftKey) === needShift &&
+      String(ev.key || "").toLowerCase() === keyPart
+    );
   }
 
   // --- Initialization & Event Listeners ---
   async function bootstrap() {
     updateClock();
     setInterval(updateClock, 10000);
+    applyTheme();
+    initParticleStarfield();
+    initCamouflageSuite();
+    initDraggableMiniPlayer();
+
+    if (window.IbossExtensions) {
+      window.IbossExtensions.syncFpsHud();
+    }
+
+    if (window.IbossMediaEmulator) {
+      mediaEmulator = window.IbossMediaEmulator.create({
+        navigate: (url) => {
+          const tab = getActiveTab() || createTab("", true);
+          navigateTab(tab, url, true);
+        },
+        openInNewTab: (url) => createTab(url, true),
+        openMiniPlayer: openMiniPlayer,
+        buildProxiedUrl: (targetUrl) =>
+          state.settings.proxyEngine === "scramjet" && scramjetEngine
+            ? scramjetEngine.encodeUrl(targetUrl)
+            : buildProxiedPath(targetUrl),
+        toast: showToast,
+        onRadioStateChange: (radioSt) => {
+          const bar = document.getElementById("radioMiniBar");
+          if (!bar) return;
+          if (!radioSt || !radioSt.station) {
+            bar.classList.add("hidden");
+            return;
+          }
+          bar.classList.remove("hidden");
+          document.getElementById("radioNowPlaying").textContent =
+            "🎵 " + radioSt.station.name + " · " + radioSt.station.genre;
+          document.getElementById(
+            "radioPlayPauseBtn"
+          ).textContent = radioSt.playing ? "Pause" : "Resume";
+        },
+      });
+    }
+
+    if (window.IbossInternalPages) {
+      internalPages = window.IbossInternalPages.create({
+        navigate: (url) => {
+          const tab = getActiveTab() || createTab("", true);
+          navigateTab(tab, url, true);
+        },
+        openInNewTab: (url) => createTab(url, true),
+        openMiniPlayer: openMiniPlayer,
+        getCustomGames: () => state.customGames,
+        pushGameSavesToCloud: (savesObj) => pushToCloud(savesObj),
+        pullGameSavesFromCloud: () => syncFromCloud(true),
+        mediaEmulator: mediaEmulator,
+        runScriptInOtherTab: (code, modName) => {
+          const target = state.tabs.find(
+            (t) => t.iframe && t.url && !isInternalUrl(t.url)
+          );
+          if (!target || !target.iframe || !target.iframe.contentWindow) {
+            showToast("Open a website or game tab first, then click Run!");
+            return;
+          }
+          try {
+            target.iframe.contentWindow.eval(code);
+            switchTab(target.id);
+            showToast("Launched " + modName + "!");
+          } catch (err) {
+            showToast("Failed to inject: " + (err.message || err));
+          }
+        },
+        toast: showToast,
+      });
+    }
+
+    if (window.IbossAdminPanel) {
+      adminPanel = window.IbossAdminPanel.create({
+        getSupabaseConfig: () => state.supabase,
+        onAdminAuthenticated: () => {
+          state.isAdmin = true;
+          showToast("Admin Command Center unlocked");
+        },
+        reloadCustomGames: reloadCustomGames,
+        toast: showToast,
+      });
+    }
 
     if (window.IbossScramjetEngine) {
       scramjetEngine = window.IbossScramjetEngine.create({
@@ -1443,8 +2610,10 @@
             updateTransportPill();
           }
         },
-        onRequestLog: (entry) => {
-          appendInspectorLog(entry);
+        onRequestLog: (entry) => appendInspectorLog(entry),
+        onPopup: (_tabId, popupUrl) => {
+          createTab(popupUrl, true);
+          showToast("Opened popup in new tab");
         },
         onPageUpdate: (tabId, url, title) => {
           const targetTab = state.tabs.find((t) => t.id === tabId);
@@ -1464,7 +2633,7 @@
         },
         onSubframeKeydown: (key) => {
           if (state.settings.panicKey && key === state.settings.panicKey) {
-            triggerPanic();
+            handleBossKeyActivation();
           }
         },
       });
@@ -1478,9 +2647,7 @@
             updateTransportPill();
           }
         },
-        onRequestLog: (entry) => {
-          appendInspectorLog(entry);
-        },
+        onRequestLog: (entry) => appendInspectorLog(entry),
         onNavigate: (tabId, url, newTab) => {
           if (newTab) {
             createTab(url, true);
@@ -1517,21 +2684,45 @@
     syncToolbarSettings();
     renderQuickLinks();
     renderBookmarks();
-    createTab("", true);
 
-    // Fetch backend status
+    // Fetch backend status, redeem ?invite= links & restore tabs if unlocked
     try {
+      const bootParams = new URLSearchParams(window.location.search);
+      const inviteParam = bootParams.get("invite");
+      if (inviteParam) {
+        const invRes = await fetch("/api/auth/invite", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code: inviteParam }),
+        });
+        const invData = await invRes.json();
+        window.history.replaceState({}, "", "/");
+        if (invRes.ok && invData.ok) {
+          showToast("Invite link accepted! Browser unlocked.");
+        }
+      }
+
       const res = await fetch("/api/status");
       const status = await res.json();
       state.authenticated = Boolean(status.authenticated);
       state.authRequired = Boolean(status.authRequired);
       state.passcodeEnabled = Boolean(status.passcodeEnabled);
+      state.camouflageServerEnabled = Boolean(status.camouflage);
+      state.lootlabs = status.lootlabs || { enabled: false };
+      state.motd = status.motd || null;
+      state.chatEnabled = status.chatEnabled !== false;
+      state.isAdmin = Boolean(status.isAdmin);
       state.prefix = status.prefix || "/proxy/";
       state.user = status.user || null;
       state.supabase = status.supabase || { enabled: false };
 
       const savedSupa = getStoredSupabaseTokens();
-      if (!state.authenticated && savedSupa && savedSupa.access_token) {
+      if (
+        !state.authenticated &&
+        savedSupa &&
+        savedSupa.access_token &&
+        !state.passcodeEnabled
+      ) {
         const restoreRes = await fetch("/api/auth/token-session", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1541,12 +2732,12 @@
         if (restoreRes.ok && restoreData.ok) {
           state.authenticated = true;
           state.user = restoreData.user;
-        } else {
-          setStoredSupabaseTokens(null);
         }
       }
 
+      await reloadCustomGames();
       refreshGateVisibility();
+
       if (state.authenticated) {
         if (scramjetEngine && state.settings.proxyEngine === "scramjet") {
           scramjetEngine.ensureReady().catch(() => {});
@@ -1554,21 +2745,90 @@
           wispEngine.ensureConnected().catch(() => {});
         }
         if (state.user && state.user.mode === "supabase") {
-          syncFromCloud();
+          syncFromCloud(false);
+        }
+        const savedTabs = loadJson(STORAGE_KEYS.OPEN_TABS, []);
+        if (state.settings.ramSaver !== false && savedTabs.length > 0) {
+          savedTabs.forEach((entry, i) => {
+            if (typeof entry === "string") {
+              createTab(entry, i === 0, false);
+            } else if (entry && entry.url) {
+              createTab(entry.url, i === 0, Boolean(entry.pinned));
+            }
+          });
+        } else {
+          createTab("", true);
         }
         handlePostUnlockRedirect();
+      } else {
+        createTab("", true);
       }
-    } catch (e) {
-      // Allow UI interaction if offline
+    } catch (_e) {
+      createTab("", true);
     }
 
-    // Gate Events
+    // Periodic Heartbeat, Key Timer & Chromebook RAM Saver
+    setInterval(updateKeyCountdownPill, 1000);
+    setInterval(() => {
+      sendPresenceHeartbeat();
+      refreshChatMessages();
+    }, 4500);
+
+    setInterval(() => {
+      if (state.settings.ramSaver === false) return;
+      const now = Date.now();
+      state.tabs.forEach((t) => {
+        if (
+          t.id !== state.activeTabId &&
+          !t.sleeping &&
+          t.iframe &&
+          t.url &&
+          !isInternalUrl(t.url) &&
+          now - t.lastActiveTs > 10 * 60 * 1000
+        ) {
+          t.sleeping = true;
+          if (scramjetEngine) scramjetEngine.destroyTabFrame(t.id);
+          t.iframe.remove();
+          t.iframe = null;
+          renderTabs();
+        }
+      });
+    }, 60000);
+
+    // Auto-Cloak on Blur & Anti-Close Guard
+    document.addEventListener("visibilitychange", () => {
+      if (state.settings.autoCloakBlur) {
+        applyCloak(document.hidden);
+      }
+    });
+    window.addEventListener("beforeunload", (ev) => {
+      if (state.settings.antiClose) {
+        ev.preventDefault();
+        ev.returnValue = "";
+      }
+    });
+
+    // Gate & LootLabs Events
     document
       .getElementById("gateTabPasscode")
       .addEventListener("click", () => switchGateTab("passcode"));
     document
       .getElementById("gateTabAccount")
       .addEventListener("click", () => switchGateTab("account"));
+
+    document
+      .getElementById("lootlabsClaimBtn")
+      .addEventListener("click", async () => {
+        const r = await fetch("/api/keys/lootlabs-start");
+        const d = await r.json();
+        if (r.ok && d.ok && d.redirectUrl) {
+          window.location.href = d.redirectUrl;
+        } else {
+          setGateAlert(
+            (d && d.error) || "LootLabs link is not configured yet."
+          );
+        }
+      });
 
     document.querySelectorAll("[data-auth-mode]").forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -1598,10 +2858,91 @@
       }
     });
 
-    // Toolbar & Navigation Events
+    document
+      .getElementById("dismissBroadcastBtn")
+      .addEventListener("click", () => {
+        const banner = document.getElementById("broadcastBanner");
+        state.dismissedBroadcastTs = Number(banner.dataset.ts || 0);
+        banner.classList.add("hidden");
+      });
+
+    // Internal Page Jump Pills on New Tab
+    document.querySelectorAll("[data-internal-jump]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const url = btn.getAttribute("data-internal-jump");
+        const tab = getActiveTab() || createTab("", true);
+        navigateTab(tab, url, true);
+      });
+    });
+
+    // Top Bar & Toolbar Navigation Events
     document
       .getElementById("newTabBtn")
       .addEventListener("click", () => createTab("", true));
+
+    document.getElementById("gamesHubBtn").addEventListener("click", () => {
+      const tab = getActiveTab() || createTab("", true);
+      navigateTab(tab, "iboss://games", true);
+    });
+
+    const mediaHubBtn = document.getElementById("mediaHubBtn");
+    if (mediaHubBtn) {
+      mediaHubBtn.addEventListener("click", () => {
+        const tab = getActiveTab() || createTab("", true);
+        navigateTab(tab, "iboss://media", true);
+      });
+    }
+
+    const desktopModeBtn = document.getElementById("desktopModeBtn");
+    if (desktopModeBtn) {
+      desktopModeBtn.addEventListener("click", () => {
+        const tab = getActiveTab() || createTab("", true);
+        navigateTab(tab, "iboss://desktop", true);
+      });
+    }
+
+    const radioPlayPauseBtn = document.getElementById("radioPlayPauseBtn");
+    if (radioPlayPauseBtn) {
+      radioPlayPauseBtn.addEventListener("click", () => {
+        if (mediaEmulator) mediaEmulator.toggleRadioPlayPause();
+      });
+    }
+
+    const radioStopBtn = document.getElementById("radioStopBtn");
+    if (radioStopBtn) {
+      radioStopBtn.addEventListener("click", () => {
+        if (mediaEmulator) mediaEmulator.stopRadio();
+      });
+    }
+
+    document.querySelectorAll(".decoy-switcher").forEach((sel) => {
+      sel.addEventListener("change", (ev) => {
+        state.settings.decoyTemplate = ev.target.value;
+        saveJson(STORAGE_KEYS.SETTINGS, state.settings);
+        syncDecoyTemplateView();
+      });
+    });
+
+    const desmosPlotBtn = document.getElementById("desmosPlotBtn");
+    if (desmosPlotBtn) {
+      desmosPlotBtn.addEventListener("click", drawDesmosDecoyCanvas);
+    }
+
+    const ackMotd = () => {
+      if (state.motd && state.motd.id) {
+        localStorage.setItem("ibossbad_ack_motd_v1", String(state.motd.id));
+      }
+      document.getElementById("motdModal").classList.add("hidden");
+    };
+    const closeMotdBtn = document.getElementById("closeMotdBtn");
+    const ackMotdBtn = document.getElementById("ackMotdBtn");
+    if (closeMotdBtn) closeMotdBtn.addEventListener("click", ackMotd);
+    if (ackMotdBtn) ackMotdBtn.addEventListener("click", ackMotd);
+
+    document.getElementById("adminNavBtn").addEventListener("click", () => {
+      const tab = getActiveTab() || createTab("", true);
+      navigateTab(tab, "iboss://admin", true);
+    });
 
     document.getElementById("omniboxForm").addEventListener("submit", (ev) => {
       ev.preventDefault();
@@ -1629,7 +2970,11 @@
     document.getElementById("backBtn").addEventListener("click", () => {
       const tab = getActiveTab();
       if (!tab) return;
-      if (state.settings.proxyEngine === "scramjet" && scramjetEngine) {
+      if (
+        !isInternalUrl(tab.url) &&
+        state.settings.proxyEngine === "scramjet" &&
+        scramjetEngine
+      ) {
         const sjFrame = scramjetEngine.getTabFrame(tab.id);
         if (sjFrame) {
           try {
@@ -1641,21 +2986,17 @@
       if (tab.historyIdx > 0) {
         tab.historyIdx--;
         navigateTab(tab, tab.history[tab.historyIdx], false);
-      } else if (
-        state.settings.proxyEngine === "stream" &&
-        tab.iframe &&
-        tab.iframe.contentWindow
-      ) {
-        try {
-          tab.iframe.contentWindow.history.back();
-        } catch (e) {}
       }
     });
 
     document.getElementById("forwardBtn").addEventListener("click", () => {
       const tab = getActiveTab();
       if (!tab) return;
-      if (state.settings.proxyEngine === "scramjet" && scramjetEngine) {
+      if (
+        !isInternalUrl(tab.url) &&
+        state.settings.proxyEngine === "scramjet" &&
+        scramjetEngine
+      ) {
         const sjFrame = scramjetEngine.getTabFrame(tab.id);
         if (sjFrame) {
           try {
@@ -1667,21 +3008,17 @@
       if (tab.historyIdx < tab.history.length - 1) {
         tab.historyIdx++;
         navigateTab(tab, tab.history[tab.historyIdx], false);
-      } else if (
-        state.settings.proxyEngine === "stream" &&
-        tab.iframe &&
-        tab.iframe.contentWindow
-      ) {
-        try {
-          tab.iframe.contentWindow.history.forward();
-        } catch (e) {}
       }
     });
 
     document.getElementById("reloadBtn").addEventListener("click", () => {
       const tab = getActiveTab();
       if (!tab || !tab.url) return;
-      if (state.settings.proxyEngine === "scramjet" && scramjetEngine) {
+      if (
+        !isInternalUrl(tab.url) &&
+        state.settings.proxyEngine === "scramjet" &&
+        scramjetEngine
+      ) {
         const sjFrame = scramjetEngine.getTabFrame(tab.id);
         if (sjFrame) {
           try {
@@ -1695,30 +3032,115 @@
 
     document.getElementById("homeBtn").addEventListener("click", () => {
       const tab = getActiveTab();
-      if (!tab) return;
-      tab.navToken++;
-      tab.url = "";
-      tab.title = "New Tab";
-      if (scramjetEngine) {
-        scramjetEngine.destroyTabFrame(tab.id);
-      }
-      if (tab.blobUrl) {
-        URL.revokeObjectURL(tab.blobUrl);
-        tab.blobUrl = null;
-      }
-      if (tab.iframe) {
-        tab.iframe.remove();
-        tab.iframe = null;
-      }
-      setLoadingProgress(false, "");
-      renderTabs();
-      updateViewportForActiveTab();
+      if (tab) navigateTab(tab, "iboss://newtab", true);
     });
+
+    document.getElementById("muteTabBtn").addEventListener("click", () => {
+      const tab = getActiveTab();
+      if (!tab) return;
+      setTabAudioMuted(tab, !tab.muted);
+      renderTabs();
+      showToast(tab.muted ? "Tab muted" : "Tab unmuted");
+    });
+
+    document.getElementById("splitViewBtn").addEventListener("click", () => {
+      state.splitMode = !state.splitMode;
+      updateViewportForActiveTab();
+      showToast(
+        state.splitMode
+          ? "Split-Screen ON (open 2 site tabs to view side-by-side)"
+          : "Split-Screen OFF"
+      );
+    });
+
+    document.getElementById("fullscreenBtn").addEventListener("click", () => {
+      const tab = getActiveTab();
+      const el =
+        (tab && tab.iframe) ||
+        document.getElementById("internalPageView") ||
+        document.documentElement;
+      if (el && el.requestFullscreen) {
+        el.requestFullscreen().catch(() => {});
+      }
+    });
+
+    // DevTools Console Drawer
+    document.getElementById("devtoolsBtn").addEventListener("click", () => {
+      document.getElementById("devtoolsDrawer").classList.toggle("hidden");
+    });
+    document
+      .getElementById("closeDevtoolsBtn")
+      .addEventListener("click", () => {
+        document.getElementById("devtoolsDrawer").classList.add("hidden");
+      });
+    document.getElementById("clearConsoleBtn").addEventListener("click", () => {
+      document.getElementById("devtoolsOutput").innerHTML = "";
+    });
+    document
+      .getElementById("inspectDomSnapshotBtn")
+      .addEventListener("click", () => {
+        const tab = getActiveTab();
+        try {
+          const doc = tab && tab.iframe && tab.iframe.contentDocument;
+          if (!doc) {
+            appendConsoleLine("Open a proxied tab first to inspect DOM.");
+            return;
+          }
+          appendConsoleLine(
+            "DOM Title: " +
+              doc.title +
+              " | Scripts: " +
+              doc.scripts.length +
+              " | Links: " +
+              doc.links.length
+          );
+          appendConsoleLine(
+            doc.documentElement.outerHTML.slice(0, 600) + "..."
+          );
+        } catch (e) {
+          appendConsoleLine("DOM Error: " + e.message);
+        }
+      });
+    document.getElementById("devtoolsForm").addEventListener("submit", (ev) => {
+      ev.preventDefault();
+      const input = document.getElementById("devtoolsInput");
+      if (!input.value.trim()) return;
+      executeJavascriptInActiveTab(input.value);
+      input.value = "";
+    });
+
+    // Instance Chat Drawer
+    document.getElementById("chatToggleBtn").addEventListener("click", () => {
+      const dr = document.getElementById("chatDrawer");
+      dr.classList.toggle("hidden");
+      if (!dr.classList.contains("hidden")) refreshChatMessages();
+    });
+    document.getElementById("closeChatBtn").addEventListener("click", () => {
+      document.getElementById("chatDrawer").classList.add("hidden");
+    });
+    document
+      .getElementById("chatSendForm")
+      .addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        const input = document.getElementById("chatMsgInput");
+        const txt = input.value.trim();
+        if (!txt) return;
+        input.value = "";
+        const r = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: txt }),
+        });
+        const d = await r.json();
+        if (!r.ok || !d.ok) {
+          showToast((d && d.error) || "Unable to send message.");
+        }
+        refreshChatMessages();
+      });
 
     document
       .getElementById("bookmarkToggleBtn")
       .addEventListener("click", toggleBookmarkForActiveTab);
-
     document
       .getElementById("transportPillBtn")
       .addEventListener("click", openSettingsModal);
@@ -1751,32 +3173,32 @@
 
     document.getElementById("openDirectBtn").addEventListener("click", () => {
       const tab = getActiveTab();
-      if (tab && tab.url) {
+      if (tab && tab.url && !isInternalUrl(tab.url)) {
         const directHref =
           state.settings.proxyEngine === "scramjet" && scramjetEngine
             ? scramjetEngine.encodeUrl(tab.url)
             : buildProxiedPath(tab.url);
         window.open(directHref, "_blank");
       } else {
-        showToast("Open a site first to pop it out.");
+        showToast("Open an external site first to pop it out.");
       }
     });
 
     document.getElementById("aboutBlankBtn").addEventListener("click", () => {
       openInAboutBlank(window.location.href);
     });
-
     document
       .getElementById("modalAboutBlankBtn")
       .addEventListener("click", () => {
         openInAboutBlank(window.location.href);
       });
-
     document.getElementById("modalBlobTabBtn").addEventListener("click", () => {
       openInBlobTab(window.location.href);
     });
 
-    document.getElementById("panicBtn").addEventListener("click", triggerPanic);
+    document
+      .getElementById("panicBtn")
+      .addEventListener("click", handleBossKeyActivation);
 
     document.getElementById("accountBadgeBtn").addEventListener("click", () => {
       if (state.user && state.user.mode === "supabase") {
@@ -1829,6 +3251,13 @@
           .classList.toggle("hidden", ev.target.value !== "custom");
       });
     document
+      .getElementById("themePresetSelect")
+      .addEventListener("change", (ev) => {
+        document
+          .getElementById("customThemePickers")
+          .classList.toggle("hidden", ev.target.value !== "custom");
+      });
+    document
       .getElementById("closeSettingsBtn")
       .addEventListener("click", () => {
         state.recordingPanicKey = false;
@@ -1846,8 +3275,16 @@
           "Press any key...";
       });
 
-    // Global Keyboard Listeners (Panic Key + Shortcuts)
+    // Global Keyboard Shortcuts & Secret Camouflage Unlock
     window.addEventListener("keydown", (ev) => {
+      // Secret Camouflage Front Door Unlock: Ctrl+Shift+U
+      if (ev.ctrlKey && ev.shiftKey && (ev.key === "U" || ev.key === "u")) {
+        ev.preventDefault();
+        state.camoRevealed = true;
+        refreshGateVisibility();
+        return;
+      }
+
       if (state.recordingPanicKey) {
         ev.preventDefault();
         state.recordingPanicKey = false;
@@ -1856,9 +3293,34 @@
         return;
       }
 
-      if (ev.altKey && (ev.key === "t" || ev.key === "T")) {
+      // Reopen Recently Closed Tab: Ctrl+Shift+T or Alt+Shift+T
+      if (
+        (ev.ctrlKey || ev.altKey) &&
+        ev.shiftKey &&
+        (ev.key === "T" || ev.key === "t")
+      ) {
+        ev.preventDefault();
+        reopenClosedTab();
+        return;
+      }
+
+      if (ev.altKey && !ev.shiftKey && (ev.key === "t" || ev.key === "T")) {
         ev.preventDefault();
         createTab("", true);
+        return;
+      }
+
+      if (matchesShortcut(ev, state.settings.hkGames)) {
+        ev.preventDefault();
+        const tab = getActiveTab() || createTab("", true);
+        navigateTab(tab, "iboss://games", true);
+        return;
+      }
+
+      if (matchesShortcut(ev, state.settings.hkSplit)) {
+        ev.preventDefault();
+        state.splitMode = !state.splitMode;
+        updateViewportForActiveTab();
         return;
       }
 
@@ -1873,21 +3335,31 @@
       if (
         state.settings.panicKey &&
         ev.key === state.settings.panicKey &&
-        (!isTyping || ev.key === "Escape")
+        (!isTyping || ev.key === "Escape" || state.decoyActive)
       ) {
         ev.preventDefault();
-        triggerPanic();
+        handleBossKeyActivation();
       }
     });
 
-    // Listen to navigation & panic messages from proxied /proxy/ iframes
+    // Listen to messages from proxied iframes & .zip Extension popups
     window.addEventListener("message", (ev) => {
       const msg = ev.data;
       if (!msg || typeof msg !== "object") return;
 
+      if (msg.__ibossExtExec && msg.code) {
+        executeJavascriptInActiveTab(msg.code);
+        return;
+      }
+
+      if (msg.__ibossExtOpen && msg.url) {
+        createTab(msg.url, true);
+        return;
+      }
+
       if (msg.type === "ibossbad:keydown") {
         if (state.settings.panicKey && msg.key === state.settings.panicKey) {
-          triggerPanic();
+          handleBossKeyActivation();
         }
         return;
       }

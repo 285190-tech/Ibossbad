@@ -3,6 +3,7 @@
 (function (window) {
   var DEFAULT_PUBLIC_RELAYS = [
     { url: "wss://definitelyscience.com/wisp/", label: "DefinitelyScience" },
+    { url: "wss://pgis-wisp.joytree.site/", label: "PGIS" },
     { url: "wss://mages.io/wisp/", label: "Mages" },
     { url: "wss://lichology.com/wisp/", label: "Lichology" },
     { url: "wss://wisp.mercurywork.shop/", label: "MercuryWorkshop" },
@@ -475,6 +476,15 @@
         activeWispUrl = null;
         selfTunnelVerified = null;
         await ensureTransportReady();
+      },
+      failoverRelay: async function () {
+        if (!allowPoolFailover || !bareConnection) return null;
+        var next = await selectFastestPoolRelay(activeWispUrl);
+        if (next) {
+          await setBareMuxWisp(next.url, "Pool · " + next.label, next.latency);
+          return next;
+        }
+        return null;
       },
     };
   }
