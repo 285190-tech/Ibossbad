@@ -405,6 +405,29 @@
               })
               .join("") +
             "</tbody></table></div>") +
+        "</div>" +
+        '<div class="internal-panel" style="margin-top:16px">' +
+        "<h3>Admin Security Audit Trail (" +
+        ((s.auditLog && s.auditLog.length) || 0) +
+        ")</h3>" +
+        (!s.auditLog || s.auditLog.length === 0
+          ? '<div class="empty-bookmarks">No admin actions recorded yet.</div>'
+          : '<div style="margin-top:8px">' +
+            s.auditLog
+              .slice(0, 30)
+              .map(function (a) {
+                return (
+                  '<div class="ext-row"><span><strong>' +
+                  esc(a.action) +
+                  "</strong> · <code>" +
+                  esc(a.target) +
+                  '</code></span><span class="settings-desc">' +
+                  esc(fmtTime(a.ts)) +
+                  "</span></div>"
+                );
+              })
+              .join("") +
+            "</div>") +
         "</div>"
       );
     }
@@ -518,11 +541,11 @@
         '<button type="button" class="btn btn-primary" id="saveLootlabsBtn">Save LootLabs</button>' +
         "</div></div>" +
         '<div class="internal-panel">' +
-        "<h3>VIP &amp; Moderator Account Roles</h3>" +
-        '<p class="settings-desc"><strong>VIP</strong> accounts skip 12h key timers &amp; rate limits and get a badge in chat. <strong>MOD</strong> accounts get a Moderator badge.</p>' +
+        "<h3>Admin, VIP &amp; Moderator Account Roles</h3>" +
+        '<p class="settings-desc"><strong>ADMIN</strong> accounts unlock <code>iboss://admin</code> automatically on sign-in. <strong>VIP</strong> accounts skip 12h key timers &amp; rate limits. <strong>MOD</strong> accounts get a Moderator badge &amp; bypass chat slow-mode.</p>' +
         '<div class="req-grid" style="margin-top:10px">' +
-        '<input id="roleIdentInput" type="text" class="field-input" placeholder="Account email (e.g. friend@example.com)" />' +
-        '<select id="roleSelect" class="field-select"><option value="VIP">VIP</option><option value="MOD">MOD</option><option value="NONE">Remove Role</option></select>' +
+        '<input id="roleIdentInput" type="text" class="field-input" placeholder="Account email (e.g. you@example.com)" />' +
+        '<select id="roleSelect" class="field-select"><option value="ADMIN">ADMIN (Full Admin Access)</option><option value="VIP">VIP</option><option value="MOD">MOD</option><option value="NONE">Remove Role</option></select>' +
         '<button type="button" class="btn btn-primary" id="saveRoleBtn">Assign Role</button>' +
         "</div>" +
         '<div style="margin-top:12px">' +
@@ -767,6 +790,15 @@
         '<div style="display:flex;gap:8px;margin-top:10px">' +
         '<input id="admChatMsgInput" type="text" class="field-input" placeholder="Send message with [ADMIN] crown badge..." />' +
         '<button type="button" class="btn btn-primary" id="admSendChatBtn">Post as [ADMIN]</button>' +
+        "</div>" +
+        '<div class="req-grid" style="margin-top:12px">' +
+        '<input id="chatSlowInput" type="number" min="0" max="300" class="field-input" placeholder="Slow-mode seconds (0 = off)" value="' +
+        Number(s.config.chatSlowModeSec || 0) +
+        '" />' +
+        '<input id="chatWordsInput" type="text" class="field-input" placeholder="Blocked words (comma-separated)" value="' +
+        esc((s.config.chatBlockedWords || []).join(", ")) +
+        '" />' +
+        '<button type="button" class="btn btn-secondary" id="saveChatFilterBtn">Save Chat Rules</button>' +
         "</div>" +
         '<div style="margin-top:12px">' +
         (s.chatMessages || [])
@@ -1326,6 +1358,45 @@
           refreshSnapshot(container);
         });
       }
+
+      var saveChatFilterBtn = container.querySelector("#saveChatFilterBtn");
+      if (saveChatFilterBtn) {
+        saveChatFilterBtn.addEventListener("click", async function () {
+          var slowSec = Number(
+            container.querySelector("#chatSlowInput").value || 0
+          );
+          var words = container
+            .querySelector("#chatWordsInput")
+            .value.split(",")
+            .map(function (w) {
+              return w.trim().toLowerCase();
+            })
+            .filter(Boolean);
+          await apiAdmin("/config", "PUT", {
+            chatSlowModeSec: slowSec,
+            chatBlockedWords: words,
+          });
+          hooks.toast("Chat slow-mode & word filter saved!");
+          refreshSnapshot(container);
+        });
+      }
+
+      var selfGrantBtn = container.querySelector("#admGrantSelfRoleBtn");
+      if (selfGrantBtn) {
+        selfGrantBtn.addEventListener("click", async function () {
+          var myEmail = hooks.getCurrentUserEmail
+            ? hooks.getCurrentUserEmail()
+            : "";
+          if (!myEmail) return;
+          await apiAdmin("/roles", "PUT", {
+            identifier: myEmail,
+            role: "ADMIN",
+          });
+          hooks.toast("👑 Bound " + myEmail + " as permanent ADMIN!");
+          if (hooks.onAdminAuthenticated) hooks.onAdminAuthenticated();
+          refreshSnapshot(container);
+        });
+      }
     }
 
     function renderDashboard(container) {
@@ -1334,6 +1405,12 @@
         return;
       }
       var s = lastSnapshot;
+      var myEmail = hooks.getCurrentUserEmail
+        ? String(hooks.getCurrentUserEmail() || "").toLowerCase()
+        : "";
+      var canBindSelf =
+        Boolean(myEmail) && (!s.roles || s.roles[myEmail] !== "ADMIN");
+
       var bodyHtml = "";
       if (activeTab === "overview") bodyHtml = renderOverviewTab(s);
       else if (activeTab === "logs") bodyHtml = renderLogsAndBansTab(s);
@@ -1345,7 +1422,12 @@
         '<div class="internal-wrap" style="max-width:1220px">' +
         '<div class="games-header-bar"><div><h1>Admin Command Center (<code>iboss://admin</code>)</h1>' +
         "<p>Real-time connected users, remote controls, IP bans, browsing history, 12h keys &amp; policies.</p></div>" +
-        '<div style="display:flex;gap:8px">' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+        (canBindSelf
+          ? '<button type="button" class="btn btn-primary" id="admGrantSelfRoleBtn">👑 Make ' +
+            esc(myEmail) +
+            " Permanent Admin</button>"
+          : "") +
         '<button type="button" class="btn btn-secondary" id="admRefreshBtn">Refresh Live Data</button>' +
         "</div></div>" +
         '<div class="cat-pills" style="margin-bottom:16px">' +

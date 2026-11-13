@@ -52,6 +52,27 @@
       accent: "#cba6f7",
       textPrimary: "#cdd6f4",
     },
+    tokyonight: {
+      bgBase: "#1a1b26",
+      bgSurface: "#16161e",
+      bgElevated: "#24283b",
+      accent: "#7aa2f7",
+      textPrimary: "#c0caf5",
+    },
+    rosepine: {
+      bgBase: "#191724",
+      bgSurface: "#1f1d2e",
+      bgElevated: "#26233a",
+      accent: "#ebbcba",
+      textPrimary: "#e0def4",
+    },
+    emerald: {
+      bgBase: "#04120c",
+      bgSurface: "#081f15",
+      bgElevated: "#0f2e20",
+      accent: "#10b981",
+      textPrimary: "#ecfdf5",
+    },
     cyberpunk: {
       bgBase: "#0b0716",
       bgSurface: "#160d29",
@@ -219,9 +240,13 @@
   let scramjetEngine = null;
   let wispEngine = null;
   let mediaEmulator = null;
+  let diagnosticsTools = null;
   let internalPages = null;
   let adminPanel = null;
   let particlesActive = false;
+  let ctxMenuTabId = null;
+  let cmdSelectedIdx = 0;
+  let cmdFilteredItems = [];
 
   function loadJson(key, fallback) {
     try {
@@ -1105,6 +1130,9 @@
       }
       tab.url = resolved;
       tab.title = resolved.replace(/^iboss:\/\//i, "").toUpperCase();
+      if (window.IbossDiagnosticsTools) {
+        window.IbossDiagnosticsTools.recordLocalHistory(resolved, tab.title);
+      }
       if (pushToHistory !== false && tab.history[tab.historyIdx] !== resolved) {
         tab.history = tab.history.slice(0, tab.historyIdx + 1);
         tab.history.push(resolved);
@@ -1118,6 +1146,9 @@
 
     tab.url = resolved;
     tab.title = getDomain(resolved);
+    if (window.IbossDiagnosticsTools) {
+      window.IbossDiagnosticsTools.recordLocalHistory(resolved, tab.title);
+    }
 
     if (pushToHistory !== false) {
       if (tab.history[tab.historyIdx] !== resolved) {
@@ -1461,7 +1492,13 @@
 
       el.addEventListener("contextmenu", (ev) => {
         ev.preventDefault();
-        togglePinTab(tab.id);
+        openTabContextMenu(tab.id, ev.clientX, ev.clientY);
+      });
+      el.addEventListener("auxclick", (ev) => {
+        if (ev.button === 1) {
+          ev.preventDefault();
+          closeTab(tab.id);
+        }
       });
       el.addEventListener("click", () => switchTab(tab.id));
       el.appendChild(badge);
@@ -2158,6 +2195,10 @@
         logoutSession();
         return;
       }
+      if (data.isAdmin !== undefined) {
+        state.isAdmin = Boolean(data.isAdmin);
+        updateAdminCrownPill(data.onlineCount);
+      }
 
       // Broadcast Banner
       const banner = document.getElementById("broadcastBanner");
@@ -2515,6 +2556,454 @@
     );
   }
 
+  function updateAdminCrownPill(onlineCount) {
+    const pill = document.getElementById("adminLivePill");
+    if (!pill) return;
+    if (!state.isAdmin) {
+      pill.classList.add("hidden");
+      return;
+    }
+    pill.classList.remove("hidden");
+    const countLabel =
+      typeof onlineCount === "number" ? " · " + onlineCount + " online" : "";
+    pill.innerHTML = "<span>👑 Admin" + countLabel + "</span>";
+  }
+
+  function openTabContextMenu(tabId, clientX, clientY) {
+    ctxMenuTabId = tabId;
+    const menu = document.getElementById("tabContextMenu");
+    if (!menu) return;
+    menu.classList.remove("hidden");
+    const maxLeft = Math.max(8, window.innerWidth - 230);
+    const maxTop = Math.max(8, window.innerHeight - 280);
+    menu.style.left = Math.min(clientX, maxLeft) + "px";
+    menu.style.top = Math.min(clientY, maxTop) + "px";
+  }
+
+  function handleTabContextAction(action) {
+    const menu = document.getElementById("tabContextMenu");
+    if (menu) menu.classList.add("hidden");
+    const tab = state.tabs.find((t) => t.id === ctxMenuTabId);
+    if (!tab) return;
+
+    if (action === "pin") {
+      togglePinTab(tab.id);
+    } else if (action === "duplicate") {
+      createTab(tab.url || "", true, false);
+      showToast("Duplicated tab");
+    } else if (action === "mute") {
+      setTabAudioMuted(tab, !tab.muted);
+      renderTabs();
+      showToast(tab.muted ? "Tab muted" : "Tab unmuted");
+    } else if (action === "sleep") {
+      if (tab.iframe) {
+        tab.sleeping = true;
+        if (scramjetEngine) scramjetEngine.destroyTabFrame(tab.id);
+        tab.iframe.remove();
+        tab.iframe = null;
+        if (state.activeTabId === tab.id) {
+          const fallback = state.tabs.find((t) => t.id !== tab.id);
+          if (fallback) switchTab(fallback.id);
+        }
+        renderTabs();
+        showToast("Tab put to sleep (RAM freed)");
+      } else {
+        showToast("Tab has no active frame to sleep.");
+      }
+    } else if (action === "pip") {
+      if (tab.url && !isInternalUrl(tab.url)) {
+        openMiniPlayer(tab.url, tab.title);
+      } else {
+        showToast("Open an external site or game to pop into PiP.");
+      }
+    } else if (action === "blank") {
+      openInAboutBlank(window.location.href);
+    } else if (action === "close-others") {
+      const toClose = state.tabs
+        .filter((t) => t.id !== tab.id && !t.pinned)
+        .map((t) => t.id);
+      toClose.forEach((id) => closeTab(id));
+      switchTab(tab.id);
+    } else if (action === "close") {
+      closeTab(tab.id);
+    }
+  }
+
+  const INTERNAL_OMNI_DIRECTORY = [
+    { url: "iboss://games", title: "200+ Games & Apps Hub", tag: "Page" },
+    { url: "iboss://media", title: "Ad-Free YouTube & Radio", tag: "Page" },
+    {
+      url: "iboss://emulator",
+      title: "Retro EmulatorJS ROM Player",
+      tag: "Page",
+    },
+    {
+      url: "iboss://store",
+      title: "1-Click Mod & DevTools Store",
+      tag: "Page",
+    },
+    {
+      url: "iboss://desktop",
+      title: "WebOS Multi-Window Desktop",
+      tag: "Page",
+    },
+    {
+      url: "iboss://diagnostics",
+      title: "WISP Relay Latency Benchmark",
+      tag: "Page",
+    },
+    {
+      url: "iboss://history",
+      title: "Workspaces & Local History",
+      tag: "Page",
+    },
+    {
+      url: "iboss://tools",
+      title: "Scratchpad, JWT Codec & Math",
+      tag: "Page",
+    },
+    {
+      url: "iboss://downloads",
+      title: "Safe-Filename Proxy Downloader",
+      tag: "Page",
+    },
+    {
+      url: "iboss://extensions",
+      title: ".zip Extensions & Custom Scripts",
+      tag: "Page",
+    },
+    {
+      url: "iboss://storage",
+      title: "Game-Save Backup & Cloud Sync",
+      tag: "Page",
+    },
+    {
+      url: "iboss://editor",
+      title: "Live HTML/CSS/JS Playground",
+      tag: "Page",
+    },
+    { url: "iboss://admin", title: "Admin Command Center", tag: "Admin" },
+    { url: "iboss://urls", title: "All Internal iboss:// URLs", tag: "Page" },
+  ];
+
+  function renderOmniboxAutocomplete(rawQuery) {
+    const box = document.getElementById("omniboxSuggestions");
+    if (!box) return;
+    const q = String(rawQuery || "")
+      .trim()
+      .toLowerCase();
+    if (!q || q.length < 2) {
+      box.classList.add("hidden");
+      box.innerHTML = "";
+      return;
+    }
+
+    const matches = [];
+    INTERNAL_OMNI_DIRECTORY.forEach((p) => {
+      if (
+        p.url.toLowerCase().includes(q) ||
+        p.title.toLowerCase().includes(q)
+      ) {
+        matches.push({ title: p.title, sub: p.url, url: p.url, tag: p.tag });
+      }
+    });
+
+    state.bookmarks.forEach((b) => {
+      if (
+        matches.length < 8 &&
+        ((b.title && b.title.toLowerCase().includes(q)) ||
+          (b.url && b.url.toLowerCase().includes(q)))
+      ) {
+        matches.push({
+          title: b.title || b.url,
+          sub: b.url,
+          url: b.url,
+          tag: "Bookmark",
+        });
+      }
+    });
+
+    if (window.IbossGamesCatalog && matches.length < 8) {
+      window.IbossGamesCatalog.search(q, "all", state.customGames)
+        .slice(0, 5)
+        .forEach((g) => {
+          if (matches.length < 8) {
+            matches.push({
+              title: g.title,
+              sub: g.category,
+              url: g.url,
+              tag: "Game",
+            });
+          }
+        });
+    }
+
+    if (window.IbossDiagnosticsTools && matches.length < 8) {
+      window.IbossDiagnosticsTools.getLocalHistory()
+        .filter(
+          (h) =>
+            h.title.toLowerCase().includes(q) || h.url.toLowerCase().includes(q)
+        )
+        .slice(0, 3)
+        .forEach((h) => {
+          if (matches.length < 8 && !matches.some((m) => m.url === h.url)) {
+            matches.push({
+              title: h.title,
+              sub: h.url,
+              url: h.url,
+              tag: "History",
+            });
+          }
+        });
+    }
+
+    if (!matches.length) {
+      box.classList.add("hidden");
+      return;
+    }
+
+    box.innerHTML = matches
+      .map(
+        (m, idx) =>
+          '<button type="button" class="omni-item" data-omni-idx="' +
+          idx +
+          '"><div><div><strong>' +
+          String(m.title).replace(/</g, "&lt;") +
+          '</strong></div><div class="omni-item-sub">' +
+          String(m.sub || "").replace(/</g, "&lt;") +
+          '</div></div><span class="omni-tag">' +
+          m.tag +
+          "</span></button>"
+      )
+      .join("");
+    box.classList.remove("hidden");
+
+    box.querySelectorAll("[data-omni-idx]").forEach((btn) => {
+      btn.addEventListener("mousedown", (ev) => {
+        ev.preventDefault();
+        const picked = matches[Number(btn.getAttribute("data-omni-idx"))];
+        box.classList.add("hidden");
+        if (picked) {
+          const tab = getActiveTab() || createTab("", true);
+          navigateTab(tab, picked.url, true);
+        }
+      });
+    });
+  }
+
+  function buildCommandPaletteItems(rawQuery) {
+    const q = String(rawQuery || "")
+      .trim()
+      .toLowerCase();
+    const all = [];
+
+    // 1. Open tabs
+    state.tabs.forEach((t) => {
+      all.push({
+        title: "Switch to Tab: " + (t.title || "New Tab"),
+        desc: t.url || "iboss://newtab",
+        badge: "Tab",
+        run: () => switchTab(t.id),
+      });
+    });
+
+    // 2. Quick browser actions
+    [
+      {
+        title: "New Tab",
+        desc: "Open a fresh browser tab (Alt+T)",
+        badge: "Action",
+        run: () => createTab("", true),
+      },
+      {
+        title: "Reopen Closed Tab",
+        desc: "Restore most recently closed tab (Ctrl+Shift+T)",
+        badge: "Action",
+        run: () => reopenClosedTab(),
+      },
+      {
+        title: "Toggle Split-Screen View",
+        desc: "View two proxied tabs side by side",
+        badge: "Action",
+        run: () => {
+          state.splitMode = !state.splitMode;
+          updateViewportForActiveTab();
+        },
+      },
+      {
+        title: "Launch in about:blank Stealth Tab",
+        desc: "Cloak entire session inside untraceable about:blank",
+        badge: "Stealth",
+        run: () => openInAboutBlank(window.location.href),
+      },
+      {
+        title: "Toggle Boss-Key School Decoy",
+        desc: "Show/hide Docs, Desmos, Canvas, or Khan decoy",
+        badge: "Stealth",
+        run: () => handleBossKeyActivation(),
+      },
+      {
+        title: "Open Browser Settings & Themes",
+        desc: "Customize WISP relay, TLS, colors & shortcuts",
+        badge: "Settings",
+        run: () => openSettingsModal(),
+      },
+    ].forEach((a) => all.push(a));
+
+    // 3. Internal iboss:// pages
+    INTERNAL_OMNI_DIRECTORY.forEach((p) => {
+      all.push({
+        title: p.title,
+        desc: p.url,
+        badge: p.tag,
+        run: () => {
+          const tab = getActiveTab() || createTab("", true);
+          navigateTab(tab, p.url, true);
+        },
+      });
+    });
+
+    // 4. 1-Click Store Mods
+    if (window.IbossExtensions && window.IbossExtensions.storeCatalog) {
+      window.IbossExtensions.storeCatalog.forEach((mod) => {
+        all.push({
+          title: "Run Mod: " + mod.name,
+          desc: mod.desc,
+          badge: "Mod",
+          run: () => {
+            const target = state.tabs.find(
+              (t) => t.iframe && t.url && !isInternalUrl(t.url)
+            );
+            if (target && target.iframe && target.iframe.contentWindow) {
+              target.iframe.contentWindow.eval(mod.code);
+              switchTab(target.id);
+              showToast("Injected " + mod.name);
+            } else {
+              const tab = getActiveTab() || createTab("", true);
+              navigateTab(tab, "iboss://store", true);
+            }
+          },
+        });
+      });
+    }
+
+    // 5. Theme Presets
+    Object.keys(THEME_PRESETS).forEach((tk) => {
+      all.push({
+        title: "Apply Theme: " + tk.charAt(0).toUpperCase() + tk.slice(1),
+        desc: "Instant UI color theme switch",
+        badge: "Theme",
+        run: () => {
+          state.settings.themePreset = tk;
+          saveJson(STORAGE_KEYS.SETTINGS, state.settings);
+          applyTheme();
+          pushToCloud();
+          showToast("Theme set to " + tk);
+        },
+      });
+    });
+
+    // 6. Games search (when query present or top featured)
+    if (window.IbossGamesCatalog) {
+      const gameHits = q
+        ? window.IbossGamesCatalog.search(q, "all", state.customGames).slice(
+            0,
+            18
+          )
+        : window.IbossGamesCatalog.search(
+            "",
+            "featured",
+            state.customGames
+          ).slice(0, 8);
+      gameHits.forEach((g) => {
+        all.push({
+          title: "Play: " + g.title,
+          desc: g.category + " · " + g.url,
+          badge: "Game",
+          run: () => createTab(g.url, true),
+        });
+      });
+    }
+
+    if (!q) return all.slice(0, 24);
+
+    const matched = all.filter(
+      (item) =>
+        item.title.toLowerCase().includes(q) ||
+        item.desc.toLowerCase().includes(q) ||
+        item.badge.toLowerCase().includes(q)
+    );
+
+    matched.push({
+      title: 'Navigate / Search: "' + rawQuery.trim() + '"',
+      desc: "Open directly in active tab",
+      badge: "Go",
+      run: () => {
+        const tab = getActiveTab() || createTab("", true);
+        navigateTab(tab, rawQuery.trim(), true);
+      },
+    });
+
+    return matched.slice(0, 25);
+  }
+
+  function renderCommandPaletteList() {
+    const listEl = document.getElementById("cmdPaletteList");
+    const inputEl = document.getElementById("cmdPaletteInput");
+    if (!listEl || !inputEl) return;
+    cmdFilteredItems = buildCommandPaletteItems(inputEl.value);
+    if (cmdSelectedIdx >= cmdFilteredItems.length) {
+      cmdSelectedIdx = 0;
+    }
+
+    listEl.innerHTML = cmdFilteredItems
+      .map(
+        (it, idx) =>
+          '<button type="button" class="cmd-row' +
+          (idx === cmdSelectedIdx ? " selected" : "") +
+          '" data-cmd-idx="' +
+          idx +
+          '"><div class="cmd-row-left"><strong>' +
+          String(it.title).replace(/</g, "&lt;") +
+          '</strong><span class="cmd-row-desc">' +
+          String(it.desc || "").replace(/</g, "&lt;") +
+          '</span></div><span class="omni-tag">' +
+          it.badge +
+          "</span></button>"
+      )
+      .join("");
+
+    listEl.querySelectorAll("[data-cmd-idx]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const idx = Number(btn.getAttribute("data-cmd-idx"));
+        closeCommandPalette();
+        if (cmdFilteredItems[idx]) cmdFilteredItems[idx].run();
+      });
+    });
+
+    const selRow = listEl.querySelector(".cmd-row.selected");
+    if (selRow && selRow.scrollIntoView) {
+      selRow.scrollIntoView({ block: "nearest" });
+    }
+  }
+
+  function openCommandPalette() {
+    if (!state.authenticated) return;
+    const modal = document.getElementById("commandPaletteModal");
+    const input = document.getElementById("cmdPaletteInput");
+    if (!modal || !input) return;
+    modal.classList.remove("hidden");
+    input.value = "";
+    cmdSelectedIdx = 0;
+    renderCommandPaletteList();
+    setTimeout(() => input.focus(), 10);
+  }
+
+  function closeCommandPalette() {
+    const modal = document.getElementById("commandPaletteModal");
+    if (modal) modal.classList.add("hidden");
+  }
+
   // --- Initialization & Event Listeners ---
   async function bootstrap() {
     updateClock();
@@ -2558,6 +3047,28 @@
       });
     }
 
+    if (window.IbossDiagnosticsTools) {
+      diagnosticsTools = window.IbossDiagnosticsTools.create({
+        getSettings: () => state.settings,
+        applyWispPreset: (presetVal) => {
+          state.settings.wispPreset = presetVal;
+          saveJson(STORAGE_KEYS.SETTINGS, state.settings);
+          applyWispConfiguration();
+          pushToCloud();
+        },
+        getOpenTabUrls: () =>
+          state.tabs
+            .map((t) => t.url)
+            .filter((u) => u && !/^javascript:/i.test(u)),
+        restoreWorkspaceTabs: (urls) => {
+          if (!Array.isArray(urls) || !urls.length) return;
+          urls.forEach((u, idx) => createTab(u, idx === 0));
+        },
+        openInNewTab: (url) => createTab(url, true),
+        toast: showToast,
+      });
+    }
+
     if (window.IbossInternalPages) {
       internalPages = window.IbossInternalPages.create({
         navigate: (url) => {
@@ -2570,6 +3081,7 @@
         pushGameSavesToCloud: (savesObj) => pushToCloud(savesObj),
         pullGameSavesFromCloud: () => syncFromCloud(true),
         mediaEmulator: mediaEmulator,
+        diagnosticsTools: diagnosticsTools,
         runScriptInOtherTab: (code, modName) => {
           const target = state.tabs.find(
             (t) => t.iframe && t.url && !isInternalUrl(t.url)
@@ -2593,8 +3105,11 @@
     if (window.IbossAdminPanel) {
       adminPanel = window.IbossAdminPanel.create({
         getSupabaseConfig: () => state.supabase,
+        getCurrentUserEmail: () =>
+          state.user && state.user.email ? state.user.email : "",
         onAdminAuthenticated: () => {
           state.isAdmin = true;
+          updateAdminCrownPill();
           showToast("Admin Command Center unlocked");
         },
         reloadCustomGames: reloadCustomGames,
@@ -2712,6 +3227,7 @@
       state.motd = status.motd || null;
       state.chatEnabled = status.chatEnabled !== false;
       state.isAdmin = Boolean(status.isAdmin);
+      updateAdminCrownPill(status.onlineCount);
       state.prefix = status.prefix || "/proxy/";
       state.user = status.user || null;
       state.supabase = status.supabase || { enabled: false };
@@ -2944,8 +3460,83 @@
       navigateTab(tab, "iboss://admin", true);
     });
 
+    const adminLivePill = document.getElementById("adminLivePill");
+    if (adminLivePill) {
+      adminLivePill.addEventListener("click", () => {
+        const tab = getActiveTab() || createTab("", true);
+        navigateTab(tab, "iboss://admin", true);
+      });
+    }
+
+    const cmdPaletteBtn = document.getElementById("cmdPaletteBtn");
+    if (cmdPaletteBtn) {
+      cmdPaletteBtn.addEventListener("click", openCommandPalette);
+    }
+
+    const cmdModal = document.getElementById("commandPaletteModal");
+    const cmdInput = document.getElementById("cmdPaletteInput");
+    if (cmdModal && cmdInput) {
+      cmdModal.addEventListener("click", (ev) => {
+        if (ev.target === cmdModal) closeCommandPalette();
+      });
+      cmdInput.addEventListener("input", () => {
+        cmdSelectedIdx = 0;
+        renderCommandPaletteList();
+      });
+      cmdInput.addEventListener("keydown", (ev) => {
+        if (ev.key === "ArrowDown") {
+          ev.preventDefault();
+          cmdSelectedIdx =
+            (cmdSelectedIdx + 1) % Math.max(1, cmdFilteredItems.length);
+          renderCommandPaletteList();
+        } else if (ev.key === "ArrowUp") {
+          ev.preventDefault();
+          cmdSelectedIdx =
+            (cmdSelectedIdx - 1 + Math.max(1, cmdFilteredItems.length)) %
+            Math.max(1, cmdFilteredItems.length);
+          renderCommandPaletteList();
+        } else if (ev.key === "Enter") {
+          ev.preventDefault();
+          const chosen = cmdFilteredItems[cmdSelectedIdx];
+          closeCommandPalette();
+          if (chosen) chosen.run();
+        } else if (ev.key === "Escape") {
+          ev.preventDefault();
+          closeCommandPalette();
+        }
+      });
+    }
+
+    document.querySelectorAll("[data-tab-ctx]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        handleTabContextAction(btn.getAttribute("data-tab-ctx"));
+      });
+    });
+
+    window.addEventListener("click", () => {
+      const ctx = document.getElementById("tabContextMenu");
+      if (ctx) ctx.classList.add("hidden");
+      const omni = document.getElementById("omniboxSuggestions");
+      if (omni) omni.classList.add("hidden");
+    });
+
+    const omniboxInputEl = document.getElementById("omniboxInput");
+    if (omniboxInputEl) {
+      omniboxInputEl.addEventListener("input", (ev) => {
+        renderOmniboxAutocomplete(ev.target.value);
+      });
+      omniboxInputEl.addEventListener("blur", () => {
+        setTimeout(() => {
+          const omni = document.getElementById("omniboxSuggestions");
+          if (omni) omni.classList.add("hidden");
+        }, 160);
+      });
+    }
+
     document.getElementById("omniboxForm").addEventListener("submit", (ev) => {
       ev.preventDefault();
+      const omni = document.getElementById("omniboxSuggestions");
+      if (omni) omni.classList.add("hidden");
       const val = document.getElementById("omniboxInput").value;
       const tab = getActiveTab() || createTab("", true);
       navigateTab(tab, val, true);
@@ -3290,6 +3881,22 @@
         state.recordingPanicKey = false;
         state.settings.panicKey = ev.key;
         document.getElementById("currentPanicKeyLabel").textContent = ev.key;
+        return;
+      }
+
+      // Universal Command Palette: Ctrl+K or Cmd+K
+      if (
+        (ev.ctrlKey || ev.metaKey) &&
+        !ev.shiftKey &&
+        (ev.key === "k" || ev.key === "K")
+      ) {
+        ev.preventDefault();
+        const modal = document.getElementById("commandPaletteModal");
+        if (modal && !modal.classList.contains("hidden")) {
+          closeCommandPalette();
+        } else {
+          openCommandPalette();
+        }
         return;
       }
 

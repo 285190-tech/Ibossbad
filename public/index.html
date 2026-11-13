@@ -11,7 +11,8 @@
       type="image/svg+xml"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230ea5e9'/%3E%3Cpath d='M9 16.5L14 21.5L23 11.5' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E"
     />
-    <link rel="stylesheet" href="/ui/styles.css?v=3" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="stylesheet" href="/ui/styles.css?v=5" />
   </head>
   <body>
     <!-- Camouflage Front Door (Pomodoro Study Timer + Calculator) -->
@@ -325,6 +326,10 @@
         <div class="tab-strip-spacer"></div>
 
         <div class="top-actions">
+          <button id="adminLivePill" type="button" class="pill-btn admin-crown-pill hidden" title="Open Admin Command Center (iboss://admin)">
+            <span>👑 Admin</span>
+          </button>
+
           <span id="keyTimerPill" class="pill-btn hidden" title="Temporary Access Key Remaining Time"></span>
 
           <button id="gamesHubBtn" type="button" class="pill-btn" title="Open 200+ Games &amp; Apps Hub (iboss://games)">
@@ -417,9 +422,15 @@
             </svg>
           </button>
 
+          <button id="cmdPaletteBtn" type="button" class="cmd-kbd-btn" title="Open Command Palette (Ctrl+K)">
+            ⌘K
+          </button>
+
           <button type="submit" class="omnibox-go" title="Go">
             Go
           </button>
+
+          <div id="omniboxSuggestions" class="omnibox-suggestions hidden" role="listbox"></div>
         </form>
 
         <div class="nav-controls">
@@ -519,7 +530,7 @@
               </div>
               <h1 class="hero-title">Browse without limits.</h1>
               <p class="hero-subtitle">
-                Powered by <code>Scramjet</code> + <code>WISP</code> WASM TLS, 180+ Games, <code>.zip</code> Extensions &amp; Stealth v2.
+                Powered by <code>Scramjet</code> + <code>WISP</code> WASM TLS, 200+ Games, Retro EmulatorJS, WebOS Desktop &amp; <code>Ctrl+K</code> Command Palette.
               </p>
             </div>
 
@@ -540,14 +551,15 @@
 
             <!-- Internal Pages Quick Strip -->
             <div class="internal-pills-strip">
-              <button type="button" class="cat-pill" data-internal-jump="iboss://games">200+ Games Hub</button>
-              <button type="button" class="cat-pill" data-internal-jump="iboss://media">Media, YT &amp; Radio</button>
-              <button type="button" class="cat-pill" data-internal-jump="iboss://emulator">Retro ROM Player</button>
-              <button type="button" class="cat-pill" data-internal-jump="iboss://store">1-Click Mod Store</button>
-              <button type="button" class="cat-pill" data-internal-jump="iboss://desktop">WebOS Desktop</button>
-              <button type="button" class="cat-pill" data-internal-jump="iboss://downloads">Safe Downloader</button>
-              <button type="button" class="cat-pill" data-internal-jump="iboss://storage">Save Backup</button>
-              <button type="button" class="cat-pill" data-internal-jump="iboss://admin">Admin Center</button>
+              <button type="button" class="cat-pill" data-internal-jump="iboss://games">🎮 200+ Games</button>
+              <button type="button" class="cat-pill" data-internal-jump="iboss://media">🎬 Media &amp; Radio</button>
+              <button type="button" class="cat-pill" data-internal-jump="iboss://emulator">🕹️ Retro ROMs</button>
+              <button type="button" class="cat-pill" data-internal-jump="iboss://store">🧩 1-Click Store</button>
+              <button type="button" class="cat-pill" data-internal-jump="iboss://desktop">🖥️ WebOS Desktop</button>
+              <button type="button" class="cat-pill" data-internal-jump="iboss://diagnostics">⚡ WISP Benchmark</button>
+              <button type="button" class="cat-pill" data-internal-jump="iboss://history">🗂️ Workspaces</button>
+              <button type="button" class="cat-pill" data-internal-jump="iboss://tools">🛠️ Power Tools</button>
+              <button type="button" class="cat-pill" data-internal-jump="iboss://admin">👑 Admin Center</button>
             </div>
 
             <!-- Quick Launch Grid -->
@@ -739,6 +751,9 @@
                 <option value="midnight">Midnight (Default)</option>
                 <option value="oled">OLED Pure Black</option>
                 <option value="catppuccin">Catppuccin Mocha</option>
+                <option value="tokyonight">Tokyo Night</option>
+                <option value="rosepine">Rosé Pine</option>
+                <option value="emerald">Emerald Matrix</option>
                 <option value="cyberpunk">Cyberpunk Neon</option>
                 <option value="nord">Nord Frost</option>
                 <option value="custom">Custom Color Picker...</option>
@@ -884,6 +899,43 @@
       </div>
     </div>
 
+    <!-- Universal Command Palette (Ctrl+K / Cmd+K) -->
+    <div id="commandPaletteModal" class="modal-backdrop cmd-backdrop hidden" role="dialog" aria-modal="true">
+      <div class="cmd-palette-panel">
+        <div class="cmd-search-bar">
+          <span class="cmd-search-glyph">⌘</span>
+          <input
+            id="cmdPaletteInput"
+            type="text"
+            class="cmd-search-input"
+            placeholder="Type a command, game, iboss:// page, open tab, theme, or URL..."
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <kbd class="cmd-esc-hint">ESC</kbd>
+        </div>
+        <div id="cmdPaletteList" class="cmd-results-list" role="listbox"></div>
+        <div class="cmd-footer-bar">
+          <span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span>
+          <span><kbd>↵</kbd> Launch</span>
+          <span><kbd>Ctrl+K</kbd> Toggle</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Custom Tab Right-Click Context Menu -->
+    <div id="tabContextMenu" class="tab-context-menu hidden" role="menu">
+      <button type="button" data-tab-ctx="pin">📌 Pin / Unpin Tab</button>
+      <button type="button" data-tab-ctx="duplicate">⧉ Duplicate Tab</button>
+      <button type="button" data-tab-ctx="mute">🔇 Mute / Unmute Tab</button>
+      <button type="button" data-tab-ctx="sleep">💤 Sleep Tab (Free RAM)</button>
+      <button type="button" data-tab-ctx="pip">🪟 Pop Out to Mini-Window</button>
+      <button type="button" data-tab-ctx="blank">🕵️ Open in about:blank</button>
+      <hr />
+      <button type="button" data-tab-ctx="close-others">✕ Close Other Tabs</button>
+      <button type="button" data-tab-ctx="close" class="danger-item">✕ Close Tab</button>
+    </div>
+
     <div id="toastContainer" class="toast-container"></div>
 
     <script defer src="/vendor/jszip/jszip.min.js"></script>
@@ -892,13 +944,14 @@
     <script defer src="/vendor/libcurl/libcurl.js"></script>
     <script defer src="/vendor/acorn/acorn.js"></script>
     <script defer src="/vendor/acorn-walk/walk.js"></script>
-    <script defer src="/ui/games-catalog.js?v=4"></script>
-    <script defer src="/ui/extensions-engine.js?v=4"></script>
-    <script defer src="/ui/media-emulator.js?v=4"></script>
-    <script defer src="/ui/internal-pages.js?v=4"></script>
-    <script defer src="/ui/admin-panel.js?v=4"></script>
-    <script defer src="/ui/scramjet-engine.js?v=4"></script>
-    <script defer src="/ui/wisp-engine.js?v=4"></script>
-    <script defer src="/ui/app.js?v=4"></script>
+    <script defer src="/ui/games-catalog.js?v=5"></script>
+    <script defer src="/ui/extensions-engine.js?v=5"></script>
+    <script defer src="/ui/media-emulator.js?v=5"></script>
+    <script defer src="/ui/diagnostics-tools.js?v=5"></script>
+    <script defer src="/ui/internal-pages.js?v=5"></script>
+    <script defer src="/ui/admin-panel.js?v=5"></script>
+    <script defer src="/ui/scramjet-engine.js?v=5"></script>
+    <script defer src="/ui/wisp-engine.js?v=5"></script>
+    <script defer src="/ui/app.js?v=5"></script>
   </body>
 </html>
