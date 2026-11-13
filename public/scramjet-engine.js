@@ -7,6 +7,17 @@
   var SW_KEEPALIVE_INTERVAL_MS = 25000; // 25s (< Chrome's 30s idle SW kill timer)
 
   var DEFAULT_PUBLIC_RELAYS = [
+    { url: "wss://cdn.northstreetumc.org/", label: "NorthStreet" },
+    { url: "wss://cdn.vipersfutbol.com/", label: "Vipers" },
+    { url: "wss://cdn.pcesc.org/", label: "PCESC" },
+    { url: "wss://cdn.kcchallengevbc.com/", label: "KCChallenge" },
+    { url: "wss://cdn.slcbmooc.org/", label: "SLCB" },
+    { url: "wss://cdn.topstargym.net/", label: "TopStar" },
+    { url: "wss://cdn.goaplytexas.org/", label: "ApplyTexas" },
+    { url: "wss://cdn.clearfieldswimming.com/", label: "Clearfield" },
+    { url: "wss://cdn.richardacademy.cfd/", label: "RichardAcademy" },
+    { url: "wss://athollcottage.com/connection/", label: "Atholl" },
+    { url: "wss://kidsprepnest.org/vi/", label: "KidsPrep" },
     { url: "wss://definitelyscience.com/wisp/", label: "DefinitelyScience" },
     { url: "wss://pgis-wisp.joytree.site/", label: "PGIS" },
     { url: "wss://mages.io/wisp/", label: "Mages" },
@@ -63,6 +74,17 @@
   }
 
   function probeWsLatency(wsUrl, timeoutMs) {
+    if (
+      window.IbossServerFinder &&
+      typeof window.IbossServerFinder.probeWispHandshake === "function"
+    ) {
+      return window.IbossServerFinder.probeWispHandshake(
+        wsUrl,
+        timeoutMs || 2800
+      ).then(function (res) {
+        return res && res.ok ? res.latencyMs : null;
+      });
+    }
     return new Promise(function (resolve) {
       var t0 = performance.now();
       var done = false;
@@ -191,6 +213,21 @@
           );
           for (var j = 0; j < pending.length; j++) {
             pending[j](d.stats);
+          }
+        } else if (d.type === "scramjet-nav-error" && allowPoolFailover) {
+          if (bareConnection && activeWispUrl) {
+            clearCachedRelay();
+            selectFastestPoolRelay(activeWispUrl)
+              .then(function (next) {
+                if (next) {
+                  return setBareMuxWisp(
+                    next.url,
+                    "Pool · " + next.label,
+                    next.latency
+                  );
+                }
+              })
+              .catch(function () {});
           }
         }
       });
@@ -337,6 +374,31 @@
 
         bareConnection = new BareMux.BareMuxConnection("/baremux/worker.js");
         bareClient = new BareMux.BareClient();
+
+        // Re-sync Scramjet RPC port & BareMux transport if Chrome respawns an idle Service Worker
+        if (navigator.serviceWorker) {
+          navigator.serviceWorker.addEventListener(
+            "controllerchange",
+            function () {
+              try {
+                if (controller && navigator.serviceWorker.controller) {
+                  controller.serviceWorkerController =
+                    navigator.serviceWorker.controller;
+                  if (typeof controller.setupMessagePort === "function") {
+                    controller.setupMessagePort();
+                  }
+                }
+                if (bareConnection && activeWispUrl) {
+                  setBareMuxWisp(
+                    activeWispUrl,
+                    activeWispLabel,
+                    activeWispLatency
+                  ).catch(function () {});
+                }
+              } catch (_e) {}
+            }
+          );
+        }
       })().catch(function (err) {
         initPromise = null;
         throw err;
@@ -795,16 +857,44 @@
           emitStatus();
         }
       },
+      getActiveWispUrl: function () {
+        return activeWispUrl;
+      },
+      setDirectWispServer: async function (wispUrl, label, latency) {
+        await ensureInitialized();
+        customWispUrl = wispUrl || "";
+        await setBareMuxWisp(wispUrl, label || wispUrl, latency || null);
+      },
       reconnect: async function () {
         clearCachedRelay();
         activeWispUrl = null;
         selfTunnelVerified = null;
         await ensureTransportReady();
       },
-      failoverRelay: async function () {
-        if (!allowPoolFailover || !bareConnection) return null;
+      failoverRelay: async function (forceAllow) {
+        if (!forceAllow && !allowPoolFailover) return null;
+        await ensureInitialized();
         clearCachedRelay();
-        var next = await selectFastestPoolRelay(activeWispUrl);
+        var next = null;
+        if (
+          window.IbossServerFinder &&
+          typeof window.IbossServerFinder.findBestUnblockedServer === "function"
+        ) {
+          var found = await window.IbossServerFinder.findBestUnblockedServer({
+            excludeUrl: activeWispUrl,
+            forceFullScan: Boolean(forceAllow),
+          });
+          if (found) {
+            next = {
+              url: found.url,
+              label: found.label,
+              latency: found.latencyMs,
+            };
+          }
+        }
+        if (!next) {
+          next = await selectFastestPoolRelay(activeWispUrl);
+        }
         if (next) {
           await setBareMuxWisp(next.url, "Pool · " + next.label, next.latency);
           return next;

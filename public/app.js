@@ -159,19 +159,19 @@
 
   const QUICK_LINKS = [
     { title: "200+ Games Hub", url: "iboss://games", badge: "GM" },
+    { title: "Cine-Cloud PC", url: "iboss://cinecloud", badge: "CC" },
+    { title: "Unblocked Servers", url: "iboss://servers", badge: "SV" },
     { title: "Media & Radio", url: "iboss://media", badge: "MD" },
-    { title: "Retro ROMs", url: "iboss://emulator", badge: "EM" },
-    { title: "1-Click Store", url: "iboss://store", badge: "ST" },
     { title: "YouTube", url: "https://www.youtube.com/", badge: "YT" },
     { title: "Discord", url: "https://discord.com/app", badge: "DC" },
     {
       title: "EaglerCraft 1.8",
-      url: "https://monkeygg2.github.io/games/eaglercraft/",
+      url: "/mgg-games/eaglercraft/",
       badge: "MC",
     },
     {
       title: "Slope",
-      url: "https://monkeygg2.github.io/games/slope/",
+      url: "/mgg-games/slope/",
       badge: "SL",
     },
   ];
@@ -300,10 +300,29 @@
     });
   }
 
+  function healLegacyUrl(rawStr) {
+    if (!rawStr || typeof rawStr !== "string") return rawStr;
+    const m = rawStr.match(
+      /^https?:\/\/(?:monkeygg2\.github\.io|pijgalk\.desarrollos-lowcost\.com)\/games\/(.*)$/i
+    );
+    if (m) {
+      return "/mgg-games/" + m[1];
+    }
+    return rawStr;
+  }
+
   function getDomain(urlStr) {
     if (!urlStr) return "";
     if (/^iboss:\/\//i.test(urlStr)) {
       return urlStr.toLowerCase();
+    }
+    if (urlStr.indexOf("/mgg-games/") === 0) {
+      const slug = urlStr
+        .replace(/^\/mgg-games\/+/, "")
+        .split("/")[0]
+        .split("?")[0]
+        .replace(/-/g, " ");
+      return slug ? "Arcade · " + slug : "Arcade Game";
     }
     try {
       return new URL(urlStr).hostname.replace(/^www\./, "");
@@ -317,11 +336,15 @@
   }
 
   function resolveInputToUrl(rawInput) {
-    const input = (rawInput || "").trim();
+    const input = healLegacyUrl((rawInput || "").trim());
     if (!input) return null;
 
     if (/^iboss:\/\//i.test(input)) {
       return input.toLowerCase();
+    }
+
+    if (input.indexOf("/mgg-games/") === 0 || input === "/mgg-games") {
+      return input;
     }
 
     if (/^javascript:/i.test(input)) {
@@ -329,7 +352,7 @@
     }
 
     if (input.indexOf(state.prefix) === 0) {
-      return input.substr(state.prefix.length);
+      return healLegacyUrl(input.substr(state.prefix.length));
     }
 
     if (/^https?:\/\//i.test(input)) {
@@ -379,6 +402,15 @@
   }
 
   function initParticleStarfield() {
+    if (
+      window.IbossCineCloud &&
+      typeof window.IbossCineCloud.initGlobalParticleEngine === "function"
+    ) {
+      window.IbossCineCloud.initGlobalParticleEngine(
+        () => particlesActive && state.settings.particlesEnabled !== false
+      );
+      return;
+    }
     const canvas = document.getElementById("particleCanvas");
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -498,6 +530,17 @@
         state.settings.shieldEnabled === false
           ? "Off"
           : String(state.wispStatus.blockedCount || 0);
+    }
+
+    const sfLabel = document.getElementById("serverFinderLabel");
+    const sfDot = document.getElementById("serverFinderDot");
+    if (sfLabel) {
+      if (state.wispStatus && typeof state.wispStatus.latency === "number") {
+        sfLabel.textContent = "ping: " + state.wispStatus.latency + "ms";
+        if (sfDot) sfDot.classList.add("synced");
+      } else {
+        sfLabel.textContent = "ping: --";
+      }
     }
   }
 
@@ -1163,6 +1206,26 @@
     updateViewportForActiveTab();
     persistOpenTabs();
 
+    // Direct self-hosted /mgg-games/ mirror (zero Scramjet/WISP overhead, immune to CNAME redirects)
+    if (resolved.indexOf("/mgg-games/") === 0 || resolved === "/mgg-games") {
+      if (tab.blobUrl) {
+        URL.revokeObjectURL(tab.blobUrl);
+        tab.blobUrl = null;
+      }
+      if (tab.id === state.activeTabId) {
+        setLoadingProgress(true, "Loading Arcade Mirror...");
+      }
+      const onGameLoad = () => {
+        iframe.removeEventListener("load", onGameLoad);
+        if (tab.id === state.activeTabId && tab.navToken === myToken) {
+          setLoadingProgress(false, "");
+        }
+      };
+      iframe.addEventListener("load", onGameLoad);
+      iframe.src = resolved;
+      return;
+    }
+
     // Policy check + Access Log recording across all engines
     try {
       const checkRes = await fetch(
@@ -1469,16 +1532,28 @@
 
       const badge = document.createElement("span");
       badge.className = "tab-favicon";
-      badge.textContent = tab.muted
-        ? "🔇"
-        : tab.sleeping
-        ? "💤"
-        : tab.url
-        ? getDomain(tab.url)
-            .replace(/^iboss:\/\//, "")
-            .charAt(0)
-            .toUpperCase()
-        : "+";
+      if (tab.muted) {
+        badge.textContent = "🔇";
+      } else if (tab.sleeping) {
+        badge.textContent = "💤";
+      } else if (
+        tab.url &&
+        window.IbossVisualArt &&
+        window.IbossVisualArt.getSiteIconHtml
+      ) {
+        badge.classList.add("tab-favicon-rich");
+        badge.innerHTML = window.IbossVisualArt.getSiteIconHtml(
+          tab.url,
+          tab.title || getDomain(tab.url)
+        );
+      } else {
+        badge.textContent = tab.url
+          ? getDomain(tab.url)
+              .replace(/^iboss:\/\//, "")
+              .charAt(0)
+              .toUpperCase()
+          : "✦";
+      }
 
       const title = document.createElement("span");
       title.className = "tab-title";
@@ -1687,7 +1762,15 @@
 
       const icon = document.createElement("div");
       icon.className = "card-icon";
-      icon.textContent = item.badge;
+      if (window.IbossVisualArt && window.IbossVisualArt.getSiteIconHtml) {
+        icon.classList.add("card-icon-rich");
+        icon.innerHTML = window.IbossVisualArt.getSiteIconHtml(
+          item.url,
+          item.title
+        );
+      } else {
+        icon.textContent = item.badge;
+      }
 
       const meta = document.createElement("div");
       meta.className = "card-meta";
@@ -1726,13 +1809,35 @@
       });
 
       const dot = document.createElement("span");
-      dot.className = "bm-chip-dot";
+      if (window.IbossVisualArt && window.IbossVisualArt.getSiteIconHtml) {
+        dot.className = "bm-chip-icon";
+        dot.innerHTML = window.IbossVisualArt.getSiteIconHtml(
+          bm.url,
+          bm.title || getDomain(bm.url)
+        );
+      } else {
+        dot.className = "bm-chip-dot";
+      }
       const label = document.createElement("span");
       label.textContent = bm.title || getDomain(bm.url);
       chip.appendChild(dot);
       chip.appendChild(label);
       bar.appendChild(chip);
     });
+  }
+
+  function syncNewTabWallpaper() {
+    if (!window.IbossVisualArt) return;
+    const wp = window.IbossVisualArt.getActiveWallpaper();
+    const layer = document.getElementById("newTabWallpaperLayer");
+    const labelEl = document.getElementById("wallpaperLabelText");
+    if (layer) {
+      layer.style.backgroundImage = wp.src ? "url('" + wp.src + "')" : "none";
+      layer.classList.toggle("wallpaper-minimal", !wp.src);
+    }
+    if (labelEl) {
+      labelEl.textContent = wp.label;
+    }
   }
 
   function renderBookmarks() {
@@ -1760,9 +1865,17 @@
 
       const icon = document.createElement("div");
       icon.className = "card-icon";
-      icon.textContent = (bm.title || getDomain(bm.url) || "B")
-        .charAt(0)
-        .toUpperCase();
+      if (window.IbossVisualArt && window.IbossVisualArt.getSiteIconHtml) {
+        icon.classList.add("card-icon-rich");
+        icon.innerHTML = window.IbossVisualArt.getSiteIconHtml(
+          bm.url,
+          bm.title || getDomain(bm.url)
+        );
+      } else {
+        icon.textContent = (bm.title || getDomain(bm.url) || "B")
+          .charAt(0)
+          .toUpperCase();
+      }
 
       const meta = document.createElement("div");
       meta.className = "card-meta";
@@ -2702,6 +2815,16 @@
       tag: "Page",
     },
     {
+      url: "iboss://cinecloud",
+      title: "Cine-Cloud OS (106 AAA PC Cloud Games)",
+      tag: "Cloud",
+    },
+    {
+      url: "iboss://servers",
+      title: "Unblocked Server Finder (Binary WISP Scanner)",
+      tag: "Page",
+    },
+    {
       url: "iboss://store",
       title: "1-Click Mod & DevTools Store",
       tag: "Page",
@@ -2989,6 +3112,25 @@
       });
     }
 
+    // 7. Cine-Cloud AAA PC Cloud Games search
+    if (Array.isArray(window.IBOSS_CINE_CLOUD_CATALOG) && q) {
+      window.IBOSS_CINE_CLOUD_CATALOG.filter(
+        (cg) =>
+          cg.n.toLowerCase().includes(q) ||
+          (cg.dev && cg.dev.toLowerCase().includes(q)) ||
+          (cg.tags || []).some((t) => t.toLowerCase().includes(q))
+      )
+        .slice(0, 10)
+        .forEach((cg) => {
+          all.push({
+            title: "Cloud PC: " + cg.n,
+            desc: cg.dev + " · Cine-Cloud",
+            badge: "Cloud",
+            run: () => createTab(cg.url, true),
+          });
+        });
+    }
+
     if (!q) return all.slice(0, 24);
 
     const matched = all.filter(
@@ -3154,8 +3296,43 @@
           const tab = getActiveTab() || createTab("", true);
           navigateTab(tab, url, true);
         },
+        openUrl: (url, newTab) => {
+          if (newTab) {
+            createTab(url, true);
+          } else {
+            const tab = getActiveTab() || createTab("", true);
+            navigateTab(tab, url, true);
+          }
+        },
         openInNewTab: (url) => createTab(url, true),
         openMiniPlayer: openMiniPlayer,
+        openPip: openMiniPlayer,
+        buildProxyFrameUrl: (url) => buildProxiedPath(url),
+        getPublicConfig: () => ({ wispRelays: state.publicWispRelays || [] }),
+        getActiveWispUrl: () => {
+          if (scramjetEngine && scramjetEngine.getActiveWispUrl) {
+            const u = scramjetEngine.getActiveWispUrl();
+            if (u) return u;
+          }
+          return (state.wispStatus && state.wispStatus.wispUrl) || "";
+        },
+        onSelectWispServer: async (wispUrl, label, latency) => {
+          state.settings.wispPreset = "custom";
+          state.settings.customWispUrl = wispUrl;
+          saveJson(STORAGE_KEYS.SETTINGS, state.settings);
+          if (scramjetEngine && scramjetEngine.setDirectWispServer) {
+            try {
+              await scramjetEngine.setDirectWispServer(wispUrl, label, latency);
+            } catch (_e) {}
+          }
+          applyWispConfiguration();
+          pushToCloud();
+          showToast(
+            "⚡ Switched to " +
+              label +
+              (typeof latency === "number" ? " (" + latency + "ms)" : "")
+          );
+        },
         getCustomGames: () => state.customGames,
         pushGameSavesToCloud: (savesObj) => pushToCloud(savesObj),
         pullGameSavesFromCloud: () => syncFromCloud(true),
@@ -3276,6 +3453,15 @@
     applyCloak();
     applyWispConfiguration();
     syncToolbarSettings();
+    syncNewTabWallpaper();
+    const wpCycleBtn = document.getElementById("wallpaperCycleBtn");
+    if (wpCycleBtn && window.IbossVisualArt) {
+      wpCycleBtn.addEventListener("click", () => {
+        const nextWp = window.IbossVisualArt.cycleWallpaper();
+        syncNewTabWallpaper();
+        showToast("Wallpaper: " + nextWp.label);
+      });
+    }
     renderQuickLinks();
     renderBookmarks();
 
@@ -3488,6 +3674,112 @@
     document.getElementById("gamesHubBtn").addEventListener("click", () => {
       const tab = getActiveTab() || createTab("", true);
       navigateTab(tab, "iboss://games", true);
+    });
+
+    const cineCloudBtn = document.getElementById("cineCloudBtn");
+    if (cineCloudBtn) {
+      cineCloudBtn.addEventListener("click", () => {
+        const tab = getActiveTab() || createTab("", true);
+        navigateTab(tab, "iboss://cinecloud", true);
+      });
+    }
+
+    const serverFinderPill = document.getElementById("serverFinderPill");
+    if (serverFinderPill) {
+      serverFinderPill.addEventListener("click", () => {
+        const tab = getActiveTab() || createTab("", true);
+        navigateTab(tab, "iboss://servers", true);
+      });
+    }
+
+    const settingsFindServerBtn = document.getElementById(
+      "settingsFindServerBtn"
+    );
+    if (settingsFindServerBtn && window.IbossServerFinder) {
+      settingsFindServerBtn.addEventListener("click", async () => {
+        settingsFindServerBtn.disabled = true;
+        settingsFindServerBtn.textContent = "⏳ Scanning...";
+        try {
+          const best = await window.IbossServerFinder.findBestUnblockedServer({
+            forceFullScan: true,
+          });
+          if (best) {
+            state.settings.wispPreset = "custom";
+            state.settings.customWispUrl = best.url;
+            const presetSel = document.getElementById("wispPresetSelect");
+            const customBox = document.getElementById("customWispBox");
+            const customInp = document.getElementById("customWispInput");
+            if (presetSel) presetSel.value = "custom";
+            if (customBox) customBox.classList.remove("hidden");
+            if (customInp) customInp.value = best.url;
+            saveJson(STORAGE_KEYS.SETTINGS, state.settings);
+            if (scramjetEngine && scramjetEngine.setDirectWispServer) {
+              await scramjetEngine.setDirectWispServer(
+                best.url,
+                best.label,
+                best.latencyMs
+              );
+            }
+            applyWispConfiguration();
+            showToast(
+              "⚡ Connected to " + best.label + " (" + best.latencyMs + "ms)"
+            );
+          } else {
+            showToast("No unblocked WISP servers responded on this network.");
+          }
+        } finally {
+          settingsFindServerBtn.disabled = false;
+          settingsFindServerBtn.textContent = "⚡ Find Unblocked";
+        }
+      });
+    }
+
+    // Heal any legacy MonkeyGG2 / pijgalk.desarrollos-lowcost.com bookmarks saved earlier
+    if (Array.isArray(state.bookmarks) && state.bookmarks.length) {
+      let healedAny = false;
+      state.bookmarks.forEach((bm) => {
+        if (bm && bm.url) {
+          const h = healLegacyUrl(bm.url);
+          if (h !== bm.url) {
+            bm.url = h;
+            healedAny = true;
+          }
+        }
+      });
+      if (healedAny) {
+        saveJson(STORAGE_KEYS.BOOKMARKS, state.bookmarks);
+        renderBookmarks();
+      }
+    }
+
+    // Listen for Smart Auto-Recovery iframe messages (failover relay + retry)
+    window.addEventListener("message", async (ev) => {
+      const d = ev && ev.data;
+      if (!d || typeof d !== "object") return;
+      if (d.type === "iboss:failover-retry") {
+        let switched = null;
+        if (scramjetEngine && scramjetEngine.failoverRelay) {
+          try {
+            switched = await scramjetEngine.failoverRelay(true);
+          } catch (_e) {}
+        }
+        if (switched) {
+          showToast(
+            "⚡ Auto-switched to unblocked server: " +
+              switched.label +
+              (switched.latency ? " (" + switched.latency + "ms)" : "")
+          );
+        }
+        if (d.url) {
+          const tab = getActiveTab();
+          if (tab) {
+            navigateTab(tab, d.url, false);
+          }
+        }
+      } else if (d.type === "iboss:navigate-active" && d.url) {
+        const tab = getActiveTab() || createTab("", true);
+        navigateTab(tab, d.url, true);
+      }
     });
 
     const mediaHubBtn = document.getElementById("mediaHubBtn");

@@ -1,7 +1,18 @@
 "use strict";
 
 (function (window) {
-  var MGG_BASE = "https://monkeygg2.github.io/games/";
+  var MGG_BASE = "/mgg-games/";
+
+  function healLegacyGameUrl(rawUrl) {
+    if (!rawUrl || typeof rawUrl !== "string") return rawUrl;
+    var m = rawUrl.match(
+      /^https?:\/\/(?:monkeygg2\.github\.io|pijgalk\.desarrollos-lowcost\.com)\/games\/(.*)$/i
+    );
+    if (m) {
+      return "/mgg-games/" + m[1];
+    }
+    return rawUrl;
+  }
 
   function mgg(title, subPath, category, aliases) {
     var clean = String(subPath || "");
@@ -412,12 +423,13 @@
     categories: CATEGORIES,
     builtin: BUILTIN_CATALOG,
     builtInGames: BUILTIN_CATALOG,
+    healLegacyGameUrl: healLegacyGameUrl,
     getAll: function (customGames) {
       var extra = Array.isArray(customGames)
         ? customGames.map(function (g) {
             return {
               title: g.title,
-              url: g.url,
+              url: healLegacyGameUrl(g.url),
               category: g.category || "community",
               aliases: g.aliases || [],
               source: "Admin",
