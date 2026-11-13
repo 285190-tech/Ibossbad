@@ -1,15 +1,17 @@
-# Ibossbad v5.0 — Scramjet + WISP Stealth Browser, Command Palette, Media/Emulator Hub, WebOS & Admin Suite
+# Ibossbad v6.0 — Turbo Speed Engine, Scramjet + WISP Stealth Browser, Media/Emulator Hub, WebOS & Admin Suite
 
-Ibossbad is a flagship stealth web browser, gaming & media hub, WebOS desktop, and proxy combining **Mercury Workshop's Scramjet Service-Worker Interception Engine**, **BareMux WASM TLS (`Libcurl` & `Epoxy`)**, **GUST SW-Free Blob WISP Fallback**, and an **Acorn AST Server Stream Engine (`/proxy/`)** with **200+ Real HTML5/Flash Games**, **EmulatorJS Local ROM Player**, **`Ctrl+K` Universal Command Palette**, **7-Relay WISP Latency Benchmarker**, **Multi-Tab Workspaces**, **Supabase Cloud Sync**, and a full **`iboss://admin` Command Center**.
+Ibossbad is a flagship stealth web browser, gaming & media hub, WebOS desktop, and proxy combining **Mercury Workshop's Scramjet Service-Worker Interception Engine**, **BareMux WASM TLS (`Libcurl` & `Epoxy`)**, **GUST SW-Free Blob WISP Fallback**, and an **Acorn AST Server Stream Engine (`/proxy/`)** with **In-Memory Brotli/Gzip WASM Caching**, a **120 MB Normalized SW Game Cache**, **200+ Real HTML5/Flash Games**, **EmulatorJS Local ROM Player**, **`Ctrl+K` Universal Command Palette**, **7-Relay WISP Latency Benchmarker**, **Multi-Tab Workspaces**, **Supabase Cloud Sync**, and a full **`iboss://admin` Command Center**.
 
 ---
 
 ## Core Capabilities
 
-### 1. Triple-Engine Proxy Architecture & Live WISP Benchmarker
-- **Scramjet Service-Worker Engine (`@mercuryworkshop/scramjet` — Default)**: Intercepts fetch, XHR, WebSockets, Workers, and media streams over `@mercuryworkshop/bare-mux` (`Libcurl` WASM TLS 1.3 + HTTP/2 or `Epoxy` Rust TLS) with popup catching and automatic WISP pool failover.
-- **GUST Blob WISP Engine** & **Server Stream Engine (`/proxy/`)**: Automatic Service-Worker-free fallback plus streaming HTTP/WebSocket proxy with Brotli/Zstd/Gzip decompression and Acorn AST location rewriting.
-- **`iboss://diagnostics` — Live 7-Relay WISP Benchmarker**: Concurrent WebSocket RTT latency benchmark across `/wisp/` and all pool relays with **1-Click Auto-Select Fastest Relay** plus Service Worker, JS Heap, Storage Quota & Battery telemetry.
+### 1. Triple-Engine Proxy Architecture, Turbo Speed Stack & Live WISP Benchmarker
+- **Scramjet Service-Worker Engine (`@mercuryworkshop/scramjet` — Default)**: Intercepts fetch, XHR, WebSockets, Workers, and media streams over `@mercuryworkshop/bare-mux` (`Libcurl` WASM TLS 1.3 + HTTP/2 `[64, 6, 32]` session pool or `Epoxy` Rust TLS) with parallel zero-stall boot, active-tab 25s SW keep-alive, and single-flight hover pre-warming.
+- **120 MB Normalized LRU Asset Cache (`ibossbad-scramjet-v1` in `sw.js`)**: Instant `<5ms` reloads for `.wasm`, `.data`, `.pck`, `.unityweb`, `.swf`, fonts, images, and audio (30 MB per-file cap, volatile cache-buster stripping, and full `Range` request bypass) plus **260+ host O(1) domain-suffix Shield blocking** and 250ms batched IPC telemetry.
+- **In-Memory Brotli/Gzip Static & V8 WASM Caching + WISP `TCP_NODELAY`**: Shrinks cold-boot bundles by **~63% (~2.9 MB saved)** with `immutable` + `application/wasm` headers for V8 Tier-2 Wasm machine-code caching, `TCP_NODELAY` + `perMessageDeflate: false` on `/wisp/`, expanded 512-packet WISP flow window, and an 8,192-slot IPv4-first DNS cache with in-flight deduplication (`lib/dns-cache.js`).
+- **GUST Blob WISP Engine** & **Server Stream Engine (`/proxy/`)**: Automatic Service-Worker-free fallback plus streaming HTTP/WebSocket proxy with Brotli/Zstd/Gzip decompression, pooled 128-socket keep-alive agents, and Acorn AST location rewriting.
+- **`iboss://diagnostics` — Live 7-Relay WISP Benchmarker & Cache Inspector**: Concurrent WebSocket RTT latency benchmark across `/wisp/` and all pool relays with **1-Click Auto-Select Fastest Relay**, live SW LRU Game Cache & Server DNS Cache stats, and 1-click cache purge.
 
 ### 2. Universal `Ctrl+K` Command Palette, Smart Omnibox & Power Tab UX
 - **`Ctrl+K` / `Cmd+K` Command Palette**: Instant fuzzy launcher across all 200+ games, 15 `iboss://` pages, open tabs, 1-click store mods, theme presets, and stealth actions.
