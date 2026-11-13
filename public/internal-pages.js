@@ -75,7 +75,19 @@
           url: "iboss://games",
           title: "Games & Apps Library (200+)",
           desc:
-            "Favorites, Recently Played, MonkeyGG2 HTML5 + Ruffle Flash lineup.",
+            "Favorites, Recently Played, self-mirrored HTML5 + Ruffle Flash lineup.",
+        },
+        {
+          url: "iboss://cinecloud",
+          title: "Cine-Cloud OS (106 AAA PC Cloud Games)",
+          desc:
+            "Cyberpunk 2077, GTA V, Elden Ring, Poppy Playtime, Gamepad nav & 9 particle modes.",
+        },
+        {
+          url: "iboss://servers",
+          title: "Unblocked Server Finder",
+          desc:
+            "Binary WISP v1/v2 handshake scanner across 21+ stealth relays & CDN mirrors.",
         },
         {
           url: "iboss://media",
@@ -191,9 +203,21 @@
     function renderChangelog(container) {
       container.innerHTML =
         '<div class="internal-wrap">' +
-        '<div class="internal-hero"><h1>Ibossbad v6.0 Changelog</h1>' +
-        "<p>Turbo Speed Engine · Brotli WASM Caching · 120 MB SW Game Cache · TCP_NODELAY · Zero-Stall Boot</p></div>" +
+        '<div class="internal-hero"><h1>Ibossbad v7.0 Changelog</h1>' +
+        "<p>Cine-Cloud OS · Unblocked Server Finder · Self-Healing Relay &amp; Game Mirror · HD Glass GUI</p></div>" +
         '<div class="changelog-list">' +
+        '<div class="internal-panel" style="margin-bottom:14px"><h3>v8.0 — Cine-Cloud OS (106 PC Cloud Games), Unblocked Server Finder &amp; Self-Healing Game Mirror</h3>' +
+        "<ul>" +
+        "<li>Added <strong><code>iboss://cinecloud</code> (Cine-Cloud OS V1.5)</strong>: 106 AAA PC Cloud Games (<em>Cyberpunk 2077</em>, <em>GTA V</em>, <em>Elden Ring</em>, <em>Poppy Playtime</em>, <em>F1 22</em>), proxied Steam box art, playtime tracker, Gamepad spatial navigation, and 9 interactive particle modes.</li>" +
+        "<li>Added <strong><code>iboss://servers</code> (Opium-Style Unblocked Server Finder)</strong>: Authentic binary WISP v1/v2 stream handshake scanner across 21+ stealth relays &amp; 7 CDN mirrors, plus live toolbar ping status and 1-click fastest server switch.</li>" +
+        "<li>Added <strong><code>/mgg-games/</code> Direct Game Mirror &amp; Smart Scramjet Auto-Recovery</strong>: Permanently fixes broken upstream CNAME redirects (Slope &amp; all 190+ HTML5/Flash games) and eliminates raw Scramjet/Chromium iframe crash pages with automatic relay failover.</li>" +
+        "</ul></div>" +
+        '<div class="internal-panel" style="margin-bottom:14px"><h3>v7.0 — Visual Artwork, Illustrated Game Covers, Wallpapers &amp; Flagship GUI Overhaul</h3>' +
+        "<ul>" +
+        "<li>Added <strong>10 Bespoke HD Artwork Banners &amp; Switchable Wallpapers</strong> (<em>Cosmic Nebula</em>, <em>Liquid Sapphire</em>, <em>Neon City</em>, <em>Minimal Dark</em>) across New Tab, Auth Gate, Games, Media, Emulator &amp; WebOS Desktop.</li>" +
+        "<li>Added <strong>Illustrated Poster Covers for All 206+ Games</strong> combining genre photography, per-game color grading, custom vector emblems, and hover-zoom 1-click Play overlays.</li>" +
+        "<li>Added <strong>New Tab Visual Bento Showcase</strong>, crisp vector brand icons across Quick Launch, Bookmarks, Tabs &amp; Omnibox, and animated audio equalizer bars in <code>iboss://media</code>.</li>" +
+        "</ul></div>" +
         '<div class="internal-panel" style="margin-bottom:14px"><h3>v6.0 — Turbo Speed Engine &amp; Chromebook Optimization Suite</h3>' +
         "<ul>" +
         "<li>Added <strong>In-Memory Brotli / Gzip Static &amp; WASM Compression</strong> + <code>immutable</code> V8 Tier-2 Wasm machine-code caching headers (~75% smaller cold loads on school Wi-Fi).</li>" +
@@ -341,17 +365,23 @@
 
       container.innerHTML =
         '<div class="internal-wrap">' +
-        '<div class="games-header-bar">' +
-        "<div><h1>Games &amp; Apps Hub</h1>" +
-        "<p>200+ real HTML5, WebGL, EaglerCraft &amp; Ruffle Flash titles — star favorites or launch in PiP.</p></div>" +
+        '<div class="hub-visual-hero">' +
+        '<img src="/ui/assets/banner-games.jpg" alt="" class="hub-hero-bg" />' +
+        '<div class="hub-hero-scrim"></div>' +
+        '<div class="hub-hero-body">' +
+        "<div>" +
+        '<span class="bento-kicker">🎮 206+ HTML5, WebGL &amp; Ruffle Flash Titles · Instant SW Cache</span>' +
+        "<h1>Games &amp; Apps Arcade</h1>" +
+        "<p>Hover any poster to pre-warm TLS, star your favorites, or pop games into a floating PiP mini-window.</p>" +
+        "</div>" +
         '<div class="games-header-actions" style="display:flex;gap:8px;flex-wrap:wrap">' +
         (pads.length
           ? '<span class="cat-pill active">🎮 Gamepad Ready</span>'
           : "") +
         '<button type="button" class="btn btn-primary" id="surpriseGameBtn">🎲 Surprise Me</button>' +
         '<button type="button" class="btn btn-secondary" id="jumpEmulatorBtn">🕹️ Retro ROM Player</button>' +
-        '<button type="button" class="btn btn-secondary" id="openGameReqModalBtn">+ Request Game / Report Broken</button>' +
-        "</div></div>" +
+        '<button type="button" class="btn btn-secondary" id="openGameReqModalBtn">+ Request / Report</button>' +
+        "</div></div></div>" +
         (recentList.length > 0 &&
         !activeGameQuery &&
         activeGameCategory === "all"
@@ -407,17 +437,12 @@
         '<div class="games-catalog-grid" id="gamesCatalogGrid">' +
         results
           .map(function (g) {
-            var initials = g.title
-              .replace(/[^A-Za-z0-9 ]/g, "")
-              .split(/\s+/)
-              .slice(0, 2)
-              .map(function (w) {
-                return w.charAt(0);
-              })
-              .join("")
-              .toUpperCase();
             var isFav = favUrls.indexOf(g.url) !== -1;
             var grad = CAT_GRADIENTS[g.category] || CAT_GRADIENTS.featured;
+            var art =
+              window.IbossVisualArt && window.IbossVisualArt.getGameCoverMeta
+                ? window.IbossVisualArt.getGameCoverMeta(g)
+                : null;
             return (
               '<div class="game-tile" data-prewarm-url="' +
               esc(g.url) +
@@ -425,9 +450,25 @@
               '<div class="game-cover-banner" style="background:' +
               grad +
               '">' +
-              '<span class="game-cover-initials">' +
-              esc(initials || "GM") +
+              (art
+                ? '<img src="' +
+                  esc(art.photo) +
+                  '" alt="" loading="lazy" class="game-cover-photo" style="filter:hue-rotate(' +
+                  art.hueShift +
+                  'deg) saturate(1.15)" />' +
+                  '<div class="game-cover-scrim"></div>' +
+                  '<svg viewBox="0 0 64 64" class="game-cover-glyph" aria-hidden="true">' +
+                  art.glyphSvg +
+                  "</svg>"
+                : "") +
+              '<span class="game-cover-cat-pill">' +
+              esc(g.category) +
               "</span>" +
+              '<button type="button" class="game-hover-play" data-play-url="' +
+              esc(g.url) +
+              '" data-play-title="' +
+              esc(g.title) +
+              '"><span>▶ Play</span></button>' +
               '<button type="button" class="game-fav-btn' +
               (isFav ? " fav-on" : "") +
               '" data-fav-url="' +
@@ -435,9 +476,6 @@
               '" title="Favorite">' +
               (isFav ? "★" : "☆") +
               "</button></div>" +
-              '<div class="game-tile-top"><span class="game-cat-tag">' +
-              esc(g.category) +
-              "</span></div>" +
               '<div class="game-tile-title">' +
               esc(g.title) +
               "</div>" +
@@ -926,6 +964,30 @@
       }
       if (clean === "iboss://tools" && hooks.diagnosticsTools) {
         hooks.diagnosticsTools.renderToolsPage(container);
+        return true;
+      }
+      if (
+        (clean === "iboss://cinecloud" || clean === "iboss://cloud") &&
+        window.IbossCineCloud
+      ) {
+        window.IbossCineCloud.renderCineCloudPage(container, {
+          openUrl: hooks.openUrl,
+          openPip: hooks.openPip,
+          buildProxyFrameUrl: hooks.buildProxyFrameUrl,
+          toast: hooks.toast,
+        });
+        return true;
+      }
+      if (
+        (clean === "iboss://servers" || clean === "iboss://finder") &&
+        window.IbossServerFinder
+      ) {
+        window.IbossServerFinder.renderServerFinderPage(container, {
+          publicConfig: hooks.getPublicConfig ? hooks.getPublicConfig() : null,
+          getActiveWispUrl: hooks.getActiveWispUrl,
+          onSelectWispServer: hooks.onSelectWispServer,
+          toast: hooks.toast,
+        });
         return true;
       }
       if (clean === "iboss://extensions") {

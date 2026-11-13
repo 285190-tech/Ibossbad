@@ -227,8 +227,14 @@
     function renderMediaPage(container) {
       container.innerHTML =
         '<div class="internal-wrap">' +
-        '<div class="internal-hero"><h1>Media, Ad-Free YouTube &amp; Radio Hub (<code>iboss://media</code>)</h1>' +
-        "<p>Bypass YouTube bot-checks via privacy frontends, play persistent background study/gaming radio, or launch streaming apps.</p></div>" +
+        '<div class="hub-visual-hero">' +
+        '<img src="/ui/assets/banner-media.jpg" alt="" class="hub-hero-bg" />' +
+        '<div class="hub-hero-scrim"></div>' +
+        '<div class="hub-hero-body"><div>' +
+        '<span class="bento-kicker">🎬 Cinema &amp; Persistent Audio Studio</span>' +
+        "<h1>Media, Ad-Free YouTube &amp; Radio Hub</h1>" +
+        "<p>Bypass YouTube bot-checks via privacy frontends, play persistent background study/gaming radio, or launch streaming apps.</p>" +
+        "</div></div></div>" +
         '<div class="internal-panel" style="margin-bottom:18px">' +
         "<h3>Smart Ad-Free YouTube &amp; Video Launcher</h3>" +
         '<p class="settings-desc">Paste any YouTube link, video ID, or search query to watch ad-free without datacenter bot blocks.</p>' +
@@ -247,17 +253,32 @@
         "<h3>Persistent Background Radio &amp; Custom Stream Player</h3>" +
         '<p class="settings-desc">Keeps playing across all tabs and games — and automatically pauses when you hit your Boss Key.</p>' +
         '<div class="internal-grid" style="margin-top:12px">' +
-        RADIO_STATIONS.map(function (st) {
+        RADIO_STATIONS.map(function (st, idx) {
+          var isActive = isBgPlaying && currentStationTitle === st.name;
+          var hue = (idx * 47) % 360;
           return (
-            '<div class="internal-card" data-radio-url="' +
+            '<div class="internal-card radio-station-card' +
+            (isActive ? " radio-active" : "") +
+            '" data-radio-url="' +
             esc(st.url) +
             '" data-radio-name="' +
             esc(st.name) +
             '">' +
-            '<div class="internal-card-code">LIVE STREAM</div>' +
+            '<div class="radio-card-thumb">' +
+            '<img src="/ui/assets/banner-media.jpg" alt="" loading="lazy" style="filter:hue-rotate(' +
+            hue +
+            'deg)" />' +
+            '<div class="eq-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></div>' +
+            "</div>" +
+            '<div style="min-width:0;flex:1">' +
+            '<div class="internal-card-code">' +
+            esc(st.genre || "LIVE STREAM") +
+            "</div>" +
             "<h3>" +
             esc(st.name) +
-            "</h3><p>Click to play in persistent mini-bar</p></div>"
+            "</h3><p>" +
+            (isActive ? "Now Playing in Mini-Bar" : "Click to stream live") +
+            "</p></div></div>"
           );
         }).join("") +
         "</div>" +
@@ -267,12 +288,24 @@
         "</div></div>" +
         '<div class="section-header"><h2>Streaming, Live TV &amp; Music Web Apps</h2></div>' +
         '<div class="games-catalog-grid">' +
-        MEDIA_APPS.map(function (m) {
+        MEDIA_APPS.map(function (m, idx) {
+          var iconHtml =
+            window.IbossVisualArt && window.IbossVisualArt.getSiteIconHtml
+              ? window.IbossVisualArt.getSiteIconHtml(m.url, m.title)
+              : '<span class="game-tile-badge">' + esc(m.badge) + "</span>";
           return (
-            '<div class="game-tile">' +
-            '<div class="game-tile-top"><div class="game-tile-badge">' +
-            esc(m.badge) +
-            '</div><span class="game-cat-tag">' +
+            '<div class="game-tile" data-prewarm-url="' +
+            esc(m.url) +
+            '">' +
+            '<div class="game-cover-banner">' +
+            '<img src="/ui/assets/banner-media.jpg" alt="" loading="lazy" class="game-cover-photo" style="filter:hue-rotate(' +
+            ((idx * 38) % 360) +
+            'deg)" />' +
+            '<div class="game-cover-scrim"></div>' +
+            '<div class="media-app-center-icon">' +
+            iconHtml +
+            "</div>" +
+            '<span class="game-cover-cat-pill">' +
             esc(m.cat) +
             "</span></div>" +
             '<div class="game-tile-title">' +
@@ -384,15 +417,22 @@
 
       container.innerHTML =
         '<div class="internal-wrap" style="max-width:1160px">' +
-        '<div class="games-header-bar"><div><h1>Retro EmulatorJS Player (<code>iboss://emulator</code>)</h1>' +
-        "<p>Drop in any local GBA, NDS, NES, SNES, N64, GB/GBC, Genesis, or PS1 ROM from your device — powered by EmulatorJS.</p></div>" +
-        '<div style="display:flex;gap:8px;align-items:center">' +
+        '<div class="hub-visual-hero">' +
+        '<img src="/ui/assets/banner-emulator.jpg" alt="" class="hub-hero-bg" />' +
+        '<div class="hub-hero-scrim"></div>' +
+        '<div class="hub-hero-body">' +
+        "<div>" +
+        '<span class="bento-kicker">🕹️ Multi-System Retro Console Lab · SharedArrayBuffer Ready</span>' +
+        "<h1>Retro EmulatorJS Player</h1>" +
+        "<p>Drop in any local GBA, NDS, NES, SNES, N64, GB/GBC, Genesis, or PS1 ROM from your device.</p>" +
+        "</div>" +
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
         '<span class="cat-pill">' +
         esc(padLabel) +
         "</span>" +
         '<button type="button" class="btn btn-secondary" id="emuSavesBtn">Save Manager</button>' +
         '<button type="button" class="btn btn-secondary" id="emuFullscreenBtn">Fullscreen</button>' +
-        "</div></div>" +
+        "</div></div></div>" +
         '<div class="internal-panel" style="margin-bottom:16px">' +
         '<div class="req-grid">' +
         '<input type="file" id="emuRomInput" class="field-input" accept=".gba,.nds,.nes,.sfc,.smc,.z64,.n64,.v64,.gb,.gbc,.md,.gen,.bin,.sms,.gg,.iso,.cue,.pbp,.zip" />' +
@@ -571,8 +611,15 @@
     var desktopZ = 20;
 
     function renderDesktopMode(container) {
+      var activeWall =
+        window.IbossVisualArt && window.IbossVisualArt.getActiveWallpaper
+          ? window.IbossVisualArt.getActiveWallpaper()
+          : { src: "/ui/assets/banner-desktop.jpg" };
+      var wallUrl = activeWall.src || "/ui/assets/banner-desktop.jpg";
       container.innerHTML =
-        '<div class="webos-desktop" id="webosSurface">' +
+        '<div class="webos-desktop" id="webosSurface" style="background-image:linear-gradient(180deg,rgba(6,10,22,0.28),rgba(6,10,22,0.62)),url(\'' +
+        esc(wallUrl) +
+        "');background-size:cover;background-position:center\">" +
         '<div class="webos-icons-col">' +
         '<button type="button" class="webos-desk-icon" data-os-app="browser"><span class="webos-glyph">🌐</span><span>Web Browser</span></button>' +
         '<button type="button" class="webos-desk-icon" data-os-app="games"><span class="webos-glyph">🎮</span><span>200+ Games</span></button>' +
@@ -590,9 +637,24 @@
         '<button type="button" class="webos-dock-btn" data-os-app="editor" title="Code Playground">💻 Code</button>' +
         '<button type="button" class="webos-dock-btn" data-os-app="terminal" title="Shell">⌨️ Terminal</button>' +
         '<div style="flex:1"></div>' +
+        '<button type="button" class="webos-dock-btn" id="webosWallBtn" title="Switch Desktop Wallpaper">🖼️ Wallpaper</button>' +
         '<span id="webosClock" class="webos-clock"></span>' +
         '<button type="button" class="webos-dock-btn" id="exitWebosBtn">Exit Desktop</button>' +
         "</footer></div>";
+
+      var surfaceEl = container.querySelector("#webosSurface");
+      var wallBtn = container.querySelector("#webosWallBtn");
+      if (wallBtn && surfaceEl && window.IbossVisualArt) {
+        wallBtn.addEventListener("click", function () {
+          var nextW = window.IbossVisualArt.cycleWallpaper();
+          var nextSrc = nextW.src || "/ui/assets/banner-desktop.jpg";
+          surfaceEl.style.backgroundImage =
+            "linear-gradient(180deg,rgba(6,10,22,0.28),rgba(6,10,22,0.62)),url('" +
+            nextSrc +
+            "')";
+          hooks.toast("Wallpaper: " + nextW.label);
+        });
+      }
 
       var layer = container.querySelector("#webosWindowsLayer");
       var clockEl = container.querySelector("#webosClock");
