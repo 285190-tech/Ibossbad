@@ -17,7 +17,7 @@ Ibossbad is a self-hosted stealth web browser, cloud gaming & media hub, product
 ### 2. Built-In `iboss://` Internal Hubs
 
 - `iboss://newtab` — **Refurbished Dashboard** with live Session Pulse telemetry, Visual Bento Hub cards, Quick Launch grid, and 1-click Wallpaper Switcher.
-- `iboss://games` — **206+ HTML5, Unity WebGL & Ruffle Flash Games** via the `/mgg-games/` direct mirror with **⭐ Favorites**, **🕒 Recently Played**, and **🎲 Random Game** launcher.
+- `iboss://games` — **207+ HTML5, Unity WebGL & Ruffle Flash Games** via the `/mgg-games/` direct mirror with **⭐ Favorites**, **🕒 Recently Played**, **🎲 Surprise Me**, game details/cover-source notes, and a reversible hidden-titles filter.
 - `iboss://cinecloud` — **Cine-Cloud OS Hub** featuring **106 AAA PC Cloud Titles**, **⭐ Favorites**, **🎲 Surprise Pick**, **Gamepad D-Pad/Stick Navigation**, and **9 Interactive Canvas Particle Modes**.
 - `iboss://launchpad` — **Focus & Productivity Launchpad** with a **Pomodoro Study Timer**, **Cloud-Synced Quick Tasks**, and a **Procedural WebAudio Ambient Focus Mixer** (Brown Noise, Soft Rain, Deep Space Drone).
 - `iboss://servers` — **Unblocked Server Finder** with live binary WISP v1/v2 round-trip latency benchmarks.
@@ -44,6 +44,8 @@ npm install
 npm test
 npm start
 ```
+
+`npm test` also runs the catalog/cover preflight (`npm run check:catalog`). See [`ROADMAP.md`](ROADMAP.md) for the approved 100-item product backlog and phase status.
 
 Configure production credentials via environment variables (never commit live secrets to source control):
 

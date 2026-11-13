@@ -245,12 +245,18 @@
     var cat = String(g.category || "arcade").toLowerCase();
     var h = hashString((g.title || "") + "|" + (g.url || ""));
     var hueShift = (h % 56) - 28; // subtle +/-28 deg hue variation per game so cards look distinct
-    var photo = CATEGORY_PHOTO_MAP[cat] || BANNERS.games;
+    var hasGameCover =
+      typeof g.cover === "string" &&
+      /^\/ui\/assets\/game-covers\/[a-z0-9-]+\.webp$/.test(g.cover);
+    var photo = hasGameCover
+      ? g.cover
+      : CATEGORY_PHOTO_MAP[cat] || BANNERS.games;
     var glyphSvg = pickGameGlyphSvg(g.title, cat);
     return {
       photo: photo,
       hueShift: hueShift,
       glyphSvg: glyphSvg,
+      hasGameCover: hasGameCover,
     };
   }
 

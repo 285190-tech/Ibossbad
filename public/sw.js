@@ -462,6 +462,8 @@ function isShellBypassPath(pathname) {
   return (
     pathname.indexOf("/ui/") === 0 ||
     pathname.indexOf("/api/") === 0 ||
+    pathname.indexOf("/lesson-media/") === 0 ||
+    pathname.indexOf("/proxy/") === 0 ||
     pathname.indexOf("/mgg-games/") === 0 ||
     pathname === "/mgg-games" ||
     pathname.indexOf("/vendor/") === 0 ||
@@ -472,12 +474,75 @@ function isShellBypassPath(pathname) {
   );
 }
 
+function encodeStealthTokenSw(str) {
+  if (!str) return "";
+  const B64 =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  const key = [90, 51, 113, 25];
+  const esc = encodeURIComponent(String(str));
+  const bytes = [];
+  for (let i = 0; i < esc.length; i++) {
+    if (esc.charAt(i) === "%") {
+      bytes.push(parseInt(esc.slice(i + 1, i + 3), 16));
+      i += 2;
+    } else {
+      bytes.push(esc.charCodeAt(i));
+    }
+  }
+  for (let j = 0; j < bytes.length; j++) {
+    bytes[j] = bytes[j] ^ key[j & 3];
+  }
+  let out = "u1_";
+  for (let k = 0; k < bytes.length; k += 3) {
+    const b0 = bytes[k];
+    const b1 = k + 1 < bytes.length ? bytes[k + 1] : 0;
+    const b2 = k + 2 < bytes.length ? bytes[k + 2] : 0;
+    out += B64.charAt(b0 >> 2);
+    out += B64.charAt(((b0 & 3) << 4) | (b1 >> 4));
+    if (k + 1 < bytes.length) out += B64.charAt(((b1 & 15) << 2) | (b2 >> 6));
+    if (k + 2 < bytes.length) out += B64.charAt(b2 & 63);
+  }
+  return out;
+}
+
 function decodeScramjetTarget(requestUrl) {
   try {
     const parsed = new URL(requestUrl);
     const prefix = (scramjet.config && scramjet.config.prefix) || "/scramjet/";
     if (parsed.pathname.indexOf(prefix) !== 0) return null;
     const rawRest = parsed.pathname.slice(prefix.length) + parsed.search;
+    if (rawRest.indexOf("u1_") === 0) {
+      const B64 =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+      const qIdx = rawRest.indexOf("?");
+      const tok = qIdx === -1 ? rawRest.slice(3) : rawRest.slice(3, qIdx);
+      const extraQ = qIdx === -1 ? "" : rawRest.slice(qIdx);
+      const bytes = [];
+      for (let i = 0; i < tok.length; i += 4) {
+        const c0 = B64.indexOf(tok.charAt(i));
+        const c1 = B64.indexOf(tok.charAt(i + 1));
+        const c2 = i + 2 < tok.length ? B64.indexOf(tok.charAt(i + 2)) : -1;
+        const c3 = i + 3 < tok.length ? B64.indexOf(tok.charAt(i + 3)) : -1;
+        if (c0 < 0 || c1 < 0) break;
+        bytes.push((c0 << 2) | (c1 >> 4));
+        if (c2 >= 0) bytes.push(((c1 & 15) << 4) | (c2 >> 2));
+        if (c3 >= 0) bytes.push(((c2 & 3) << 6) | c3);
+      }
+      const key = [90, 51, 113, 25];
+      let pct = "";
+      for (let j = 0; j < bytes.length; j++) {
+        const v = (bytes[j] ^ key[j & 3]) & 255;
+        pct += "%" + (v < 16 ? "0" : "") + v.toString(16);
+      }
+      let decodedU1 = decodeURIComponent(pct);
+      if (extraQ) {
+        decodedU1 +=
+          (decodedU1.indexOf("?") === -1 ? "?" : "&") + extraQ.slice(1);
+      }
+      if (/^https?:\/\//i.test(decodedU1)) {
+        return decodedU1;
+      }
+    }
     const decoded = decodeURIComponent(rawRest);
     if (/^https?:\/\//i.test(decoded)) {
       return decoded;
@@ -621,7 +686,11 @@ function buildSmartRecoveryResponse(targetUrl, rawError) {
       }
     })()
   );
-  const streamFallbackUrl = safeUrl ? "/proxy/" + safeUrl : "/";
+  const streamFallbackUrl = !safeUrl
+    ? "/"
+    : /retrogames\.cc\/embed\/8843-jojos-bizarre-adventure/i.test(safeUrl)
+    ? "/lesson-media/unit-8843"
+    : "/proxy/" + encodeStealthTokenSw(safeUrl);
   const html =
     '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" />' +
     '<meta name="viewport" content="width=device-width,initial-scale=1" />' +

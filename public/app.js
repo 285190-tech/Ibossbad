@@ -178,8 +178,12 @@
     },
   };
 
+  const JOJO_HFTF_UPSTREAM_URL =
+    "https://www.retrogames.cc/embed/8843-jojos-bizarre-adventure%3A-heritage-for-the-future-jojo-no-kimyou-na-bouken%3A-mirai-e-no-isan-japan-990927-no-cd.html";
+
   const QUICK_LINKS = [
     { title: "200+ Games Hub", url: "iboss://games", badge: "GM" },
+    { title: "JoJo: HFTF Arcade", url: "iboss://jojo", badge: "JJ" },
     { title: "Cine-Cloud PC", url: "iboss://cinecloud", badge: "CC" },
     { title: "Focus Launchpad", url: "iboss://launchpad", badge: "FP" },
     { title: "Unblocked Servers", url: "iboss://servers", badge: "SV" },
@@ -342,15 +346,104 @@
     });
   }
 
+  function encodeStealthToken(str) {
+    if (!str) return "";
+    if (
+      window.IbossScramjetEngine &&
+      typeof window.IbossScramjetEngine.encodeStealthToken === "function"
+    ) {
+      return window.IbossScramjetEngine.encodeStealthToken(str);
+    }
+    const B64 =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    const key = [90, 51, 113, 25];
+    const esc = encodeURIComponent(String(str));
+    const bytes = [];
+    for (let i = 0; i < esc.length; i++) {
+      if (esc.charAt(i) === "%") {
+        bytes.push(parseInt(esc.slice(i + 1, i + 3), 16));
+        i += 2;
+      } else {
+        bytes.push(esc.charCodeAt(i));
+      }
+    }
+    for (let j = 0; j < bytes.length; j++) {
+      bytes[j] = bytes[j] ^ key[j & 3];
+    }
+    let out = "u1_";
+    for (let k = 0; k < bytes.length; k += 3) {
+      const b0 = bytes[k];
+      const b1 = k + 1 < bytes.length ? bytes[k + 1] : 0;
+      const b2 = k + 2 < bytes.length ? bytes[k + 2] : 0;
+      out += B64.charAt(b0 >> 2);
+      out += B64.charAt(((b0 & 3) << 4) | (b1 >> 4));
+      if (k + 1 < bytes.length) out += B64.charAt(((b1 & 15) << 2) | (b2 >> 6));
+      if (k + 2 < bytes.length) out += B64.charAt(b2 & 63);
+    }
+    return out;
+  }
+
+  function decodeStealthToken(str) {
+    if (!str) return "";
+    if (
+      window.IbossScramjetEngine &&
+      typeof window.IbossScramjetEngine.decodeStealthToken === "function"
+    ) {
+      return window.IbossScramjetEngine.decodeStealthToken(str);
+    }
+    const raw = String(str);
+    if (raw.indexOf("u1_") === 0) {
+      const B64 =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+      const qIdx = raw.indexOf("?");
+      const tok = qIdx === -1 ? raw.slice(3) : raw.slice(3, qIdx);
+      const extraQ = qIdx === -1 ? "" : raw.slice(qIdx);
+      const bytes = [];
+      for (let i = 0; i < tok.length; i += 4) {
+        const c0 = B64.indexOf(tok.charAt(i));
+        const c1 = B64.indexOf(tok.charAt(i + 1));
+        const c2 = i + 2 < tok.length ? B64.indexOf(tok.charAt(i + 2)) : -1;
+        const c3 = i + 3 < tok.length ? B64.indexOf(tok.charAt(i + 3)) : -1;
+        if (c0 < 0 || c1 < 0) break;
+        bytes.push((c0 << 2) | (c1 >> 4));
+        if (c2 >= 0) bytes.push(((c1 & 15) << 4) | (c2 >> 2));
+        if (c3 >= 0) bytes.push(((c2 & 3) << 6) | c3);
+      }
+      const key = [90, 51, 113, 25];
+      let pct = "";
+      for (let j = 0; j < bytes.length; j++) {
+        const v = (bytes[j] ^ key[j & 3]) & 255;
+        pct += "%" + (v < 16 ? "0" : "") + v.toString(16);
+      }
+      let res = decodeURIComponent(pct);
+      if (extraQ) {
+        res += (res.indexOf("?") === -1 ? "?" : "&") + extraQ.slice(1);
+      }
+      return res;
+    }
+    return raw;
+  }
+
   function healLegacyUrl(rawStr) {
     if (!rawStr || typeof rawStr !== "string") return rawStr;
-    const m = rawStr.match(
+    let cleaned = rawStr.trim();
+    const iframeMatch = cleaned.match(/<iframe[^>]+src=["']([^"']+)["']/i);
+    if (iframeMatch && iframeMatch[1]) {
+      cleaned = iframeMatch[1].trim();
+    }
+    if (
+      /retrogames\.cc\/embed\/8843-jojos-bizarre-adventure/i.test(cleaned) ||
+      /^\/lesson-media\/(unit-8843|jojo-hftf)\/?$/i.test(cleaned)
+    ) {
+      return "iboss://jojo";
+    }
+    const m = cleaned.match(
       /^https?:\/\/(?:monkeygg2\.github\.io|pijgalk\.desarrollos-lowcost\.com)\/games\/(.*)$/i
     );
     if (m) {
       return "/mgg-games/" + m[1];
     }
-    return rawStr;
+    return cleaned;
   }
 
   function getDomain(urlStr) {
@@ -401,6 +494,9 @@
     "!ddg": (q) => "https://duckduckgo.com/?q=" + encodeURIComponent(q || ""),
     "!g": (q) =>
       "https://www.google.com/search?q=" + encodeURIComponent(q || ""),
+    "!jojo": () => "iboss://jojo",
+    "!jjba": () => "iboss://jojo",
+    "!hftf": () => "iboss://jojo",
   };
 
   function evaluateSafeMath(raw) {
@@ -475,6 +571,16 @@
   }
 
   function buildProxiedPath(targetUrl) {
+    if (!targetUrl) return state.prefix;
+    if (
+      targetUrl === JOJO_HFTF_UPSTREAM_URL ||
+      /retrogames\.cc\/embed\/8843-jojos-bizarre-adventure/i.test(targetUrl)
+    ) {
+      return "/lesson-media/unit-8843";
+    }
+    if (/^https?:\/\//i.test(targetUrl) && state.prefix === "/proxy/") {
+      return "/proxy/" + encodeStealthToken(targetUrl);
+    }
     return state.prefix + targetUrl;
   }
 
@@ -1154,9 +1260,10 @@
     iframe.className = "proxy-iframe tab-iframe";
     iframe.dataset.tabId = tab.id;
     iframe.dataset.muted = tab.muted ? "true" : "false";
+    iframe.allowFullscreen = true;
     iframe.setAttribute(
       "allow",
-      "fullscreen; autoplay; clipboard-read; clipboard-write; gamepad"
+      "fullscreen; autoplay; clipboard-read; clipboard-write; gamepad; cross-origin-isolated"
     );
     iframe.addEventListener("load", () => {
       try {
@@ -1165,12 +1272,21 @@
           tab.title = docTitle;
         }
         const loc = iframe.contentWindow && iframe.contentWindow.location;
-        if (loc && loc.pathname && loc.pathname.indexOf(state.prefix) === 0) {
-          const decoded =
-            loc.pathname.substr(state.prefix.length) +
-            (loc.search || "") +
-            (loc.hash || "");
-          tab.url = decoded.replace(/^(https?:\/)([^/])/i, "$1/$2");
+        if (loc && loc.pathname) {
+          if (
+            /^\/lesson-media\/(unit-8843|jojo-hftf)\/?$/i.test(loc.pathname)
+          ) {
+            tab.url = "iboss://jojo";
+          } else if (loc.pathname.indexOf(state.prefix) === 0) {
+            const rawRest =
+              loc.pathname.substr(state.prefix.length) + (loc.search || "");
+            const unmasked =
+              rawRest.indexOf("u1_") === 0
+                ? decodeStealthToken(rawRest)
+                : rawRest;
+            const decoded = unmasked + (loc.hash || "");
+            tab.url = decoded.replace(/^(https?:\/)([^/])/i, "$1/$2");
+          }
         }
         if (window.IbossExtensions && iframe.contentWindow) {
           window.IbossExtensions.applyModsAndExtensionsToWindow(
@@ -1714,14 +1830,19 @@
       frameEl.src = targetUrl;
       return;
     }
+    const effectiveTarget = /^iboss:\/\/(jojo|hftf|jjba)$/i.test(
+      String(targetUrl || "").trim()
+    )
+      ? JOJO_HFTF_UPSTREAM_URL
+      : targetUrl;
     if (state.settings.proxyEngine === "scramjet" && scramjetEngine) {
       scramjetEngine
-        .navigateTabFrame("mini-pip", frameEl, targetUrl)
+        .navigateTabFrame("mini-pip", frameEl, effectiveTarget)
         .catch(() => {
-          frameEl.src = buildProxiedPath(targetUrl);
+          frameEl.src = buildProxiedPath(effectiveTarget);
         });
     } else {
-      frameEl.src = buildProxiedPath(targetUrl);
+      frameEl.src = buildProxiedPath(effectiveTarget);
     }
   }
 
@@ -3044,6 +3165,12 @@
       tag: "Page",
     },
     {
+      url: "iboss://jojo",
+      title:
+        "JoJo's Bizarre Adventure: Heritage for the Future (CPS-3 Stealth Arcade)",
+      tag: "Arcade",
+    },
+    {
       url: "iboss://cinecloud",
       title: "Cine-Cloud OS (106 AAA PC Cloud Games)",
       tag: "Cloud",
@@ -3573,6 +3700,40 @@
         openMiniPlayer: openMiniPlayer,
         openPip: openMiniPlayer,
         buildProxyFrameUrl: (url) => buildProxiedPath(url),
+        mountStealthEmbed: (frameEl, targetUrl, preferredMode, onReady) => {
+          const wantScramjet =
+            preferredMode !== "stream" &&
+            state.settings.proxyEngine === "scramjet" &&
+            scramjetEngine &&
+            typeof scramjetEngine.navigateTabFrame === "function";
+          if (wantScramjet) {
+            const perceived = "/scramjet/" + encodeStealthToken(targetUrl);
+            scramjetEngine
+              .navigateTabFrame(
+                "stealth-embed-" + Date.now(),
+                frameEl,
+                targetUrl
+              )
+              .then(() => {
+                if (typeof onReady === "function") {
+                  onReady(perceived, "scramjet");
+                }
+              })
+              .catch(() => {
+                const streamPath = buildProxiedPath(targetUrl);
+                frameEl.src = streamPath;
+                if (typeof onReady === "function") {
+                  onReady(streamPath, "stream");
+                }
+              });
+            return;
+          }
+          const streamPath = buildProxiedPath(targetUrl);
+          frameEl.src = streamPath;
+          if (typeof onReady === "function") {
+            onReady(streamPath, "stream");
+          }
+        },
         getPublicConfig: () => ({ wispRelays: state.publicWispRelays || [] }),
         getActiveWispUrl: () => {
           if (scramjetEngine && scramjetEngine.getActiveWispUrl) {
