@@ -24,7 +24,7 @@
     <link rel="preconnect" href="https://definitelyscience.com" crossorigin />
     <link rel="preconnect" href="https://wisp.mercurywork.shop" crossorigin />
     <link rel="preconnect" href="https://anura.pro" crossorigin />
-    <link rel="stylesheet" href="/ui/styles.css?v=10" />
+    <link rel="stylesheet" href="/ui/styles.css?v=11" />
   </head>
   <body>
     <!-- Camouflage Front Door (Pomodoro Study Timer + Calculator) -->
@@ -107,6 +107,9 @@
           <button type="button" class="gate-tab" data-gate-tab="account" id="gateTabAccount">
             Cloud Account
           </button>
+          <button type="button" class="gate-tab" data-gate-tab="admin" id="gateTabAdmin">
+            👑 Admin
+          </button>
         </div>
 
         <div id="gateAlert" class="gate-alert hidden"></div>
@@ -174,6 +177,29 @@
           <button type="submit" class="btn btn-primary btn-block" id="accountSubmitBtn">
             Sign In &amp; Sync
           </button>
+        </form>
+
+        <!-- Admin Recovery / Lockdown Bypass Form -->
+        <form id="adminGateForm" class="gate-form hidden">
+          <label class="field-label" for="adminGatePassword">Administrator Password</label>
+          <input
+            id="adminGatePassword"
+            type="password"
+            class="field-input"
+            placeholder="Enter Admin Command Center password"
+            autocomplete="current-password"
+            required
+          />
+          <label id="adminDisableLockdownRow" class="hidden" style="display:flex;align-items:center;gap:8px;margin:10px 0 12px;font-size:13px;color:#cbd5e1;cursor:pointer">
+            <input id="adminDisableLockdownChk" type="checkbox" checked />
+            <span>Turn off Maintenance Mode immediately upon sign-in</span>
+          </label>
+          <button type="submit" class="btn btn-primary btn-block" id="adminGateSubmitBtn">
+            👑 Sign In as Admin &amp; Open Console
+          </button>
+          <p class="gate-hint">
+            Admins can always sign in here—even when Maintenance Lockdown is active or sessions were kicked.
+          </p>
         </form>
 
         <p class="gate-moderation-note">
@@ -1033,18 +1059,18 @@
     <script defer src="/vendor/libcurl/libcurl.js"></script>
     <script defer src="/vendor/acorn/acorn.js"></script>
     <script defer src="/vendor/acorn-walk/walk.js"></script>
-    <script defer src="/ui/visual-art.js?v=10"></script>
-    <script defer src="/ui/server-finder.js?v=10"></script>
-    <script defer src="/ui/games-catalog.js?v=10"></script>
-    <script defer src="/ui/cine-cloud-catalog.js?v=10"></script>
-    <script defer src="/ui/cine-cloud.js?v=10"></script>
-    <script defer src="/ui/extensions-engine.js?v=10"></script>
-    <script defer src="/ui/media-emulator.js?v=10"></script>
-    <script defer src="/ui/diagnostics-tools.js?v=10"></script>
-    <script defer src="/ui/internal-pages.js?v=10"></script>
-    <script defer src="/ui/admin-panel.js?v=10"></script>
-    <script defer src="/ui/scramjet-engine.js?v=10"></script>
-    <script defer src="/ui/wisp-engine.js?v=10"></script>
-    <script defer src="/ui/app.js?v=10"></script>
+    <script defer src="/ui/visual-art.js?v=11"></script>
+    <script defer src="/ui/server-finder.js?v=11"></script>
+    <script defer src="/ui/games-catalog.js?v=11"></script>
+    <script defer src="/ui/cine-cloud-catalog.js?v=11"></script>
+    <script defer src="/ui/cine-cloud.js?v=11"></script>
+    <script defer src="/ui/extensions-engine.js?v=11"></script>
+    <script defer src="/ui/media-emulator.js?v=11"></script>
+    <script defer src="/ui/diagnostics-tools.js?v=11"></script>
+    <script defer src="/ui/internal-pages.js?v=11"></script>
+    <script defer src="/ui/admin-panel.js?v=11"></script>
+    <script defer src="/ui/scramjet-engine.js?v=11"></script>
+    <script defer src="/ui/wisp-engine.js?v=11"></script>
+    <script defer src="/ui/app.js?v=11"></script>
   </body>
 </html>

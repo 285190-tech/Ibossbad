@@ -211,6 +211,8 @@
     passcodeEnabled: true,
     camouflageServerEnabled: false,
     camoRevealed: false,
+    lockdownEnabled: false,
+    lockdownMessage: "",
     lootlabs: { enabled: false, durationHours: 12 },
     motd: null,
     chatEnabled: true,
@@ -2022,12 +2024,25 @@
           state.authenticated = true;
           state.camoRevealed = true;
           state.user = data.user;
+          if (data.isAdmin) {
+            state.isAdmin = true;
+            updateAdminCrownPill();
+          }
           document.getElementById("camoCodeInput").value = "";
           refreshGateVisibility();
-          showToast("Browser unlocked");
+          if (data.isAdmin && state.lockdownEnabled) {
+            const tab = getActiveTab() || createTab("", true);
+            navigateTab(tab, "iboss://admin", true);
+          }
+          showToast(
+            data.isAdmin ? "Admin session unlocked" : "Browser unlocked"
+          );
         } else {
           state.camoRevealed = true;
           refreshGateVisibility();
+          if (data && data.lockdown) {
+            switchGateTab("admin");
+          }
           setGateAlert(data.error || "Enter valid passcode or 12h key.");
         }
       });
@@ -2060,21 +2075,19 @@
   function switchGateTab(which) {
     const passTab = document.getElementById("gateTabPasscode");
     const accTab = document.getElementById("gateTabAccount");
+    const admTab = document.getElementById("gateTabAdmin");
     const passForm = document.getElementById("passcodeForm");
     const accForm = document.getElementById("accountForm");
+    const admForm = document.getElementById("adminGateForm");
     setGateAlert("");
 
-    if (which === "account") {
-      passTab.classList.remove("active");
-      accTab.classList.add("active");
-      passForm.classList.add("hidden");
-      accForm.classList.remove("hidden");
-    } else {
-      accTab.classList.remove("active");
-      passTab.classList.add("active");
-      accForm.classList.add("hidden");
-      passForm.classList.remove("hidden");
-    }
+    if (passTab) passTab.classList.toggle("active", which === "passcode");
+    if (accTab) accTab.classList.toggle("active", which === "account");
+    if (admTab) admTab.classList.toggle("active", which === "admin");
+
+    if (passForm) passForm.classList.toggle("hidden", which !== "passcode");
+    if (accForm) accForm.classList.toggle("hidden", which !== "account");
+    if (admForm) admForm.classList.toggle("hidden", which !== "admin");
   }
 
   function updateAccountBadge() {
@@ -2102,6 +2115,11 @@
     const gateCodeRow = document.getElementById("accountGateCodeRow");
     const gateCodeInput = document.getElementById("accountGateCode");
     const llBtn = document.getElementById("lootlabsClaimBtn");
+    const disableLockRow = document.getElementById("adminDisableLockdownRow");
+
+    if (disableLockRow) {
+      disableLockRow.classList.toggle("hidden", !state.lockdownEnabled);
+    }
 
     if (llBtn) {
       llBtn.classList.toggle(
@@ -2112,13 +2130,29 @@
 
     if (!state.passcodeEnabled) {
       passTab.classList.add("hidden");
-      switchGateTab("account");
+      if (state.lockdownEnabled && !state.authenticated) {
+        switchGateTab("admin");
+      } else {
+        switchGateTab("account");
+      }
     } else {
       passTab.classList.remove("hidden");
+      if (state.lockdownEnabled && !state.authenticated) {
+        switchGateTab("admin");
+      }
     }
 
-    // Require site passcode on Cloud Account form whenever not yet unlocked
-    const needPasscodeOnAccount = state.passcodeEnabled && !state.authenticated;
+    if (state.lockdownEnabled && !state.authenticated) {
+      setGateAlert(
+        "🛠️ " +
+          (state.lockdownMessage || "Maintenance mode is currently active.") +
+          " Admins can sign in below to turn off Maintenance Mode."
+      );
+    }
+
+    // Require site passcode on Cloud Account form whenever not yet unlocked (except during lockdown so Admin accounts can sign in directly)
+    const needPasscodeOnAccount =
+      state.passcodeEnabled && !state.authenticated && !state.lockdownEnabled;
     if (gateCodeRow && gateCodeInput) {
       gateCodeRow.classList.toggle("hidden", !needPasscodeOnAccount);
       gateCodeInput.required = needPasscodeOnAccount;
@@ -2189,18 +2223,31 @@
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
+        if (data && data.lockdown) {
+          state.lockdownEnabled = true;
+          switchGateTab("admin");
+        }
         setGateAlert(data.error || "Incorrect passcode or key.");
         return;
       }
       state.authenticated = true;
       state.gateForceOpen = false;
       state.user = data.user;
+      if (data.isAdmin) {
+        state.isAdmin = true;
+        updateAdminCrownPill();
+      }
       document.getElementById("passcodeInput").value = "";
       refreshGateVisibility();
       if (scramjetEngine) scramjetEngine.reconnect().catch(() => {});
       if (wispEngine) wispEngine.reconnect().catch(() => {});
-      handlePostUnlockRedirect();
-      showToast("Browser unlocked");
+      if (data.isAdmin && state.lockdownEnabled) {
+        const tab = getActiveTab() || createTab("", true);
+        navigateTab(tab, "iboss://admin", true);
+      } else {
+        handlePostUnlockRedirect();
+      }
+      showToast(data.isAdmin ? "Admin session unlocked" : "Browser unlocked");
     } catch (_err) {
       setGateAlert("Network error verifying passcode.");
     } finally {
@@ -2219,7 +2266,12 @@
       setGateAlert("Enter a valid email and password (at least 6 characters).");
       return;
     }
-    if (state.passcodeEnabled && !state.authenticated && !gateCode) {
+    if (
+      state.passcodeEnabled &&
+      !state.authenticated &&
+      !state.lockdownEnabled &&
+      !gateCode
+    ) {
       setGateAlert("Site Passcode or 12h Key is required.");
       return;
     }
@@ -2311,6 +2363,13 @@
       state.authenticated = true;
       state.gateForceOpen = false;
       state.user = sessionObj.user;
+      if (
+        payload.isAdmin ||
+        (sessionObj.user && sessionObj.user.role === "ADMIN")
+      ) {
+        state.isAdmin = true;
+        updateAdminCrownPill();
+      }
       document.getElementById("authPassword").value = "";
       document.getElementById("accountGateCode").value = "";
       refreshGateVisibility();
@@ -2324,6 +2383,71 @@
       setGateAlert("Unable to reach authentication service.");
     } finally {
       btn.disabled = false;
+    }
+  }
+
+  async function handleAdminGateSubmit(ev) {
+    ev.preventDefault();
+    setGateAlert("");
+    const pwdInput = document.getElementById("adminGatePassword");
+    const disableLockChk = document.getElementById("adminDisableLockdownChk");
+    const btn = document.getElementById("adminGateSubmitBtn");
+    const pwd = pwdInput ? pwdInput.value : "";
+    const shouldDisableLockdown = Boolean(
+      state.lockdownEnabled && (!disableLockChk || disableLockChk.checked)
+    );
+
+    if (!pwd) {
+      setGateAlert("Enter the Administrator Password.");
+      return;
+    }
+
+    if (btn) btn.disabled = true;
+    try {
+      const res = await fetch("/api/admin/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          password: pwd,
+          disableLockdown: shouldDisableLockdown,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setGateAlert(data.error || "Incorrect Admin password.");
+        return;
+      }
+
+      state.authenticated = true;
+      state.isAdmin = true;
+      state.gateForceOpen = false;
+      state.camoRevealed = true;
+      if (shouldDisableLockdown) {
+        state.lockdownEnabled = false;
+      }
+      state.user = data.user || {
+        id: "admin",
+        email: null,
+        mode: "admin",
+        role: "ADMIN",
+      };
+      if (pwdInput) pwdInput.value = "";
+      updateAdminCrownPill();
+      refreshGateVisibility();
+      if (scramjetEngine) scramjetEngine.reconnect().catch(() => {});
+      if (wispEngine) wispEngine.reconnect().catch(() => {});
+
+      const tab = getActiveTab() || createTab("", true);
+      navigateTab(tab, "iboss://admin", true);
+      showToast(
+        shouldDisableLockdown
+          ? "👑 Maintenance Mode turned OFF & Admin Console unlocked!"
+          : "👑 Signed in as Administrator!"
+      );
+    } catch (_err) {
+      setGateAlert("Network error signing in as Admin.");
+    } finally {
+      if (btn) btn.disabled = false;
     }
   }
 
@@ -3504,6 +3628,8 @@
       state.authRequired = Boolean(status.authRequired);
       state.passcodeEnabled = Boolean(status.passcodeEnabled);
       state.camouflageServerEnabled = Boolean(status.camouflage);
+      state.lockdownEnabled = Boolean(status.lockdownEnabled);
+      state.lockdownMessage = status.lockdownMessage || "";
       state.lootlabs = status.lootlabs || { enabled: false };
       state.motd = status.motd || null;
       state.chatEnabled = status.chatEnabled !== false;
@@ -3619,6 +3745,10 @@
     document
       .getElementById("gateTabAccount")
       .addEventListener("click", () => switchGateTab("account"));
+    const gateTabAdmin = document.getElementById("gateTabAdmin");
+    if (gateTabAdmin) {
+      gateTabAdmin.addEventListener("click", () => switchGateTab("admin"));
+    }
 
     document
       .getElementById("lootlabsClaimBtn")
@@ -3654,6 +3784,10 @@
     document
       .getElementById("accountForm")
       .addEventListener("submit", handleAccountSubmit);
+    const adminGateForm = document.getElementById("adminGateForm");
+    if (adminGateForm) {
+      adminGateForm.addEventListener("submit", handleAdminGateSubmit);
+    }
 
     document.getElementById("authGate").addEventListener("click", (ev) => {
       if (ev.target.id === "authGate" && state.authenticated) {
