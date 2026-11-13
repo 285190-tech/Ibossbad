@@ -462,8 +462,30 @@ test("v8.0: /mgg-games/ direct mirror, broken CNAME healing, binary WISP server 
     var ytRecHtml = await ytRecRes.text();
     t.match(
       ytRecHtml,
-      /iboss:failover-retry/,
-      "Recovery page triggers automatic WISP server failover"
+      /btnSwitchRetry/,
+      "Recovery page exposes manual Switch Server & Retry button"
+    );
+    t.notMatch(
+      ytRecHtml,
+      /setTimeout\(function\(\)\{location\.reload/,
+      "Recovery page does NOT auto-loop or auto-reload on load"
+    );
+    t.notMatch(
+      swSrc,
+      /scramjet-nav-error/,
+      "SW never broadcasts background scramjet-nav-error relay swaps"
+    );
+    t.equal(
+      sfWin.IbossServerFinder.getServerProtocol(
+        "wss://cdn.northstreetumc.org/"
+      ),
+      "WISP v2",
+      "Identifies Opium stealth servers as WISP v2 (requiring epoxy transport)"
+    );
+    t.equal(
+      sfWin.IbossServerFinder.getServerProtocol("wss://wisp.mercurywork.shop/"),
+      "WISP v1",
+      "Identifies universal community relays as WISP v1"
     );
     t.match(
       ytRecHtml,

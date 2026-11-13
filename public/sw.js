@@ -625,7 +625,7 @@ function buildSmartRecoveryResponse(targetUrl, rawError) {
   const html =
     '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" />' +
     '<meta name="viewport" content="width=device-width,initial-scale=1" />' +
-    "<title>Reconnecting via Unblocked Relay...</title>" +
+    "<title>Connection Interrupted</title>" +
     "<style>" +
     "body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 0%,#1e1b4b 0%,#090d16 70%);color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,sans-serif;padding:24px;box-sizing:border-box}" +
     ".card{max-width:520px;width:100%;background:rgba(17,24,39,0.88);backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,0.12);border-radius:20px;padding:28px;box-shadow:0 24px 56px rgba(0,0,0,0.55)}" +
@@ -638,9 +638,9 @@ function buildSmartRecoveryResponse(targetUrl, rawError) {
     ".btn-primary{background:#6366f1;border-color:#818cf8;color:#fff}" +
     ".btn:hover{filter:brightness(1.1)}" +
     "</style></head><body><div class='card'>" +
-    "<div class='badge' id='recBadge'>⚡ Auto-Healing WISP Tunnel</div>" +
-    "<h1 id='recTitle'>Switching to an unblocked server...</h1>" +
-    "<p id='recDesc'>The current relay or upstream host closed the connection without sending headers. Ibossbad is probing unblocked WISP servers automatically.</p>" +
+    "<div class='badge'>⚠️ Upstream Connection Reset</div>" +
+    "<h1>Could not reach target page</h1>" +
+    "<p>The destination website or current WISP relay closed the connection. Retry below, switch to another unblocked WISP server, or open via the direct Stream engine.</p>" +
     "<code>" +
     escapeRecoveryHtml(
       (safeUrl ? safeUrl + " — " : "") +
@@ -648,10 +648,11 @@ function buildSmartRecoveryResponse(targetUrl, rawError) {
     ) +
     "</code>" +
     "<div class='actions'>" +
-    "<button class='btn btn-primary' id='btnSwitchRetry' type='button'>⚡ Find Unblocked Server &amp; Retry</button>" +
+    "<button class='btn btn-primary' id='btnSimpleRetry' type='button'>🔄 Retry Page</button>" +
+    "<button class='btn' id='btnSwitchRetry' type='button'>⚡ Switch Server &amp; Retry</button>" +
     "<a class='btn' href='" +
     escapeRecoveryHtml(streamFallbackUrl) +
-    "'>🔄 Open via Stream Engine (/proxy/)</a>" +
+    "'>🌐 Open via Stream (/proxy/)</a>" +
     (httpsCandidate
       ? "<button class='btn' id='btnHttpsRetry' type='button'>🔒 Retry with HTTPS</button>"
       : "") +
@@ -666,31 +667,16 @@ function buildSmartRecoveryResponse(targetUrl, rawError) {
     "var httpsUrl=" +
     JSON.stringify(httpsCandidate) +
     ";" +
-    "var key='iboss_autoretry_'+(target||'page');" +
-    "function triggerFailover(nextUrl){" +
-    "try{if(window.parent&&window.parent!==window){window.parent.postMessage({type:'iboss:failover-retry',url:nextUrl||target},'*');}}catch(e){}" +
-    "setTimeout(function(){location.reload();},1200);" +
-    "}" +
-    "document.getElementById('btnSwitchRetry').onclick=function(){triggerFailover(target);};" +
+    "document.getElementById('btnSimpleRetry').onclick=function(){location.reload();};" +
+    "document.getElementById('btnSwitchRetry').onclick=function(){" +
+    "var b=this;b.disabled=true;b.textContent='⏳ Switching server...';" +
+    "if(window.parent&&window.parent!==window){window.parent.postMessage({type:'iboss:failover-retry',url:target},'*');}" +
+    "else{location.reload();}" +
+    "};" +
     "var hb=document.getElementById('btnHttpsRetry');" +
     "if(hb){hb.onclick=function(){if(window.parent&&window.parent!==window){window.parent.postMessage({type:'iboss:navigate-active',url:httpsUrl},'*');}else{location.href='/proxy/'+httpsUrl;}};}" +
     "var yb=document.getElementById('btnYtMedia');" +
     "if(yb){yb.onclick=function(){if(window.parent&&window.parent!==window){window.parent.postMessage({type:'iboss:navigate-active',url:'iboss://media'},'*');}};}" +
-    "try{" +
-    "if(!sessionStorage.getItem(key)){" +
-    "sessionStorage.setItem(key,'1');" +
-    "if(httpsUrl&&window.parent&&window.parent!==window){" +
-    "window.parent.postMessage({type:'iboss:failover-retry',url:httpsUrl},'*');" +
-    "}else{" +
-    "triggerFailover(target);" +
-    "}" +
-    "}else{" +
-    "sessionStorage.removeItem(key);" +
-    "document.getElementById('recBadge').textContent='⚠️ Connection Interrupted';" +
-    "document.getElementById('recTitle').textContent='Target host or relay unreachable';" +
-    "document.getElementById('recDesc').textContent='Try switching to another unblocked WISP server below, or open this page via the direct Server Stream (/proxy/) engine.';" +
-    "}" +
-    "}catch(e){}" +
     "})();" +
     "</script></body></html>";
 
@@ -707,12 +693,7 @@ function isNavigationFetch(req) {
   if (!req) return false;
   if (req.mode === "navigate") return true;
   const dest = req.destination || "";
-  if (dest === "document" || dest === "iframe") return true;
-  const accept =
-    req.headers && typeof req.headers.get === "function"
-      ? req.headers.get("accept") || ""
-      : "";
-  return accept.indexOf("text/html") !== -1 && (req.method || "GET") === "GET";
+  return dest === "document" || dest === "iframe";
 }
 
 async function handleScramjetFetch(event) {
@@ -810,13 +791,6 @@ async function handleScramjetFetch(event) {
         ) {
           const msgMatch = peekText.match(/Message:\s*([^\n<]+)/i);
           errSnippet = msgMatch ? msgMatch[1].trim() : "Relay transport error";
-          if (telemetryChannel) {
-            telemetryChannel.postMessage({
-              type: "scramjet-nav-error",
-              url: targetUrl,
-              error: errSnippet,
-            });
-          }
           return buildSmartRecoveryResponse(targetUrl, errSnippet);
         }
       } catch (_e2) {}
@@ -854,15 +828,6 @@ async function handleScramjetFetch(event) {
     );
     const errMsg =
       (err && err.message) || String(err || "Scramjet fetch error");
-    if (telemetryChannel && failedUrl) {
-      try {
-        telemetryChannel.postMessage({
-          type: "scramjet-nav-error",
-          url: failedUrl,
-          error: errMsg,
-        });
-      } catch (_e) {}
-    }
     if (isNavigationFetch(event.request)) {
       return buildSmartRecoveryResponse(failedUrl, errMsg);
     }

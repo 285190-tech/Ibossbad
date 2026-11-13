@@ -236,6 +236,24 @@
   };
 
   state.settings = Object.assign({}, DEFAULT_SETTINGS, state.settings || {});
+  if (!state.settings.wispHealedV82) {
+    state.settings.wispHealedV82 = true;
+    if (
+      state.settings.wispPreset === "custom" &&
+      /(northstreetumc|vipersfutbol|pcesc|kcchallengevbc|slcbmooc|topstargym|goaplytexas|clearfieldswimming|richardacademy|athollcottage|kidsprepnest)/i.test(
+        state.settings.customWispUrl || ""
+      )
+    ) {
+      state.settings.wispPreset = "auto";
+      state.settings.customWispUrl = "";
+    }
+    try {
+      localStorage.setItem(
+        STORAGE_KEYS.SETTINGS,
+        JSON.stringify(state.settings)
+      );
+    } catch (_e) {}
+  }
 
   let scramjetEngine = null;
   let wispEngine = null;

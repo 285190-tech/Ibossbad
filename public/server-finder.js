@@ -3,75 +3,41 @@
 // Opium-Style Authentic Binary WISP v1/v2 Handshake Scanner & Unblocked Server Finder
 (function (window) {
   var CUSTOM_SERVERS_KEY = "ibossbad.customWispServers.v1";
-  var STICKY_WID_KEY = "ibossbad.wispWid.v1";
-  var LAST_SCAN_CACHE_KEY = "ibossbad.wispScanResults.v1";
+  var STICKY_WID_KEY = "ibossbad.wispWid.v2";
+  var LAST_SCAN_CACHE_KEY = "ibossbad.wispScanResults.v2";
 
   // Combined 20-server unblocked WISP relay pool:
-  // Includes Opium's stealth CDN WISP domains + Zinc/Mercury community relays
+  // Universal WISP v1 relays first (compatible with both libcurl & epoxy),
+  // followed by Opium's stealth WISP v2 CDN domains (paired automatically with epoxy).
   var BUILTIN_WISP_POOL = [
-    {
-      url: "wss://cdn.northstreetumc.org/",
-      label: "NorthStreet CDN",
-      group: "Opium Stealth",
-    },
-    {
-      url: "wss://cdn.vipersfutbol.com/",
-      label: "Vipers CDN",
-      group: "Opium Stealth",
-    },
-    {
-      url: "wss://cdn.pcesc.org/",
-      label: "PCESC Education CDN",
-      group: "Opium Stealth",
-    },
-    {
-      url: "wss://cdn.kcchallengevbc.com/",
-      label: "KCChallenge CDN",
-      group: "Opium Stealth",
-    },
-    {
-      url: "wss://cdn.slcbmooc.org/",
-      label: "SLCB MOOC CDN",
-      group: "Opium Stealth",
-    },
-    {
-      url: "wss://cdn.topstargym.net/",
-      label: "TopStar CDN",
-      group: "Opium Stealth",
-    },
-    {
-      url: "wss://cdn.goaplytexas.org/",
-      label: "ApplyTexas CDN",
-      group: "Opium Stealth",
-    },
-    {
-      url: "wss://cdn.clearfieldswimming.com/",
-      label: "Clearfield CDN",
-      group: "Opium Stealth",
-    },
-    {
-      url: "wss://cdn.richardacademy.cfd/",
-      label: "RichardAcademy CDN",
-      group: "Opium Stealth",
-    },
-    {
-      url: "wss://athollcottage.com/connection/",
-      label: "Atholl Tunnel",
-      group: "Opium Backup",
-    },
-    {
-      url: "wss://kidsprepnest.org/vi/",
-      label: "KidsPrep Tunnel",
-      group: "Opium Backup",
-    },
     {
       url: "wss://wisp.mercurywork.shop/",
       label: "MercuryWorkshop",
       group: "Community",
     },
     {
+      url: "wss://anura.pro/",
+      label: "Anura OS Relay",
+      group: "Community",
+    },
+    {
       url: "wss://definitelyscience.com/wisp/",
       label: "DefinitelyScience",
+      group: "Community",
+    },
+    {
+      url: "wss://wisp.rhw.one/",
+      label: "RHW Relay",
+      group: "Community",
+    },
+    {
+      url: "wss://nebulaproxy.io/wisp/",
+      label: "Nebula Relay",
+      group: "Community",
+    },
+    {
+      url: "wss://wisp.terbiumon.top/wisp/",
+      label: "Terbium WISP",
       group: "Community",
     },
     {
@@ -90,24 +56,70 @@
       group: "Community",
     },
     {
-      url: "wss://wisp.terbiumon.top/wisp/",
-      label: "Terbium WISP",
-      group: "Community",
+      url: "wss://cdn.northstreetumc.org/",
+      label: "NorthStreet CDN",
+      group: "Opium Stealth",
+      v2: true,
     },
     {
-      url: "wss://anura.pro/",
-      label: "Anura OS Relay",
-      group: "Community",
+      url: "wss://cdn.vipersfutbol.com/",
+      label: "Vipers CDN",
+      group: "Opium Stealth",
+      v2: true,
     },
     {
-      url: "wss://nebulaproxy.io/wisp/",
-      label: "Nebula Relay",
-      group: "Community",
+      url: "wss://cdn.pcesc.org/",
+      label: "PCESC Education CDN",
+      group: "Opium Stealth",
+      v2: true,
     },
     {
-      url: "wss://wisp.rhw.one/",
-      label: "RHW Relay",
-      group: "Community",
+      url: "wss://cdn.kcchallengevbc.com/",
+      label: "KCChallenge CDN",
+      group: "Opium Stealth",
+      v2: true,
+    },
+    {
+      url: "wss://cdn.slcbmooc.org/",
+      label: "SLCB MOOC CDN",
+      group: "Opium Stealth",
+      v2: true,
+    },
+    {
+      url: "wss://cdn.topstargym.net/",
+      label: "TopStar CDN",
+      group: "Opium Stealth",
+      v2: true,
+    },
+    {
+      url: "wss://cdn.goaplytexas.org/",
+      label: "ApplyTexas CDN",
+      group: "Opium Stealth",
+      v2: true,
+    },
+    {
+      url: "wss://cdn.clearfieldswimming.com/",
+      label: "Clearfield CDN",
+      group: "Opium Stealth",
+      v2: true,
+    },
+    {
+      url: "wss://cdn.richardacademy.cfd/",
+      label: "RichardAcademy CDN",
+      group: "Opium Stealth",
+      v2: true,
+    },
+    {
+      url: "wss://athollcottage.com/connection/",
+      label: "Atholl Tunnel",
+      group: "Opium Backup",
+      v2: true,
+    },
+    {
+      url: "wss://kidsprepnest.org/vi/",
+      label: "KidsPrep Tunnel",
+      group: "Opium Backup",
+      v2: true,
     },
   ];
 
@@ -482,7 +494,8 @@
       }
     }
 
-    // Scan in waves of 6 and pick the lowest-latency verified unblocked server
+    // Scan in waves of 6 and pick the lowest-latency verified unblocked server.
+    // Prefer universal WISP v1 servers (compatible with libcurl & epoxy) before WISP v2-only relays.
     var all = await scanAllWispServers({
       extraAdminRelays: opts.extraAdminRelays,
       concurrency: 6,
@@ -493,11 +506,27 @@
       return r.ok && r.url !== excludeUrl;
     });
     if (!candidates.length) return null;
-    var best = candidates[0];
+    var v1Candidates = candidates.filter(function (r) {
+      return r.protocol !== "WISP v2";
+    });
+    var best = v1Candidates.length ? v1Candidates[0] : candidates[0];
     try {
       window.localStorage.setItem(STICKY_WID_KEY, best.url);
     } catch (_e2) {}
     return best;
+  }
+
+  function getServerProtocol(rawUrl) {
+    var norm = normalizeWispUrl(rawUrl);
+    if (!norm) return "WISP v1";
+    var cached = latestResults.get(norm);
+    if (cached && cached.protocol) {
+      return cached.protocol;
+    }
+    var match = BUILTIN_WISP_POOL.find(function (s) {
+      return normalizeWispUrl(s.url) === norm;
+    });
+    return match && match.v2 ? "WISP v2" : "WISP v1";
   }
 
   async function probeCdnMirrors(onItem) {
@@ -890,6 +919,7 @@
     BUILTIN_WISP_POOL: BUILTIN_WISP_POOL,
     CDN_MIRRORS: CDN_MIRRORS,
     normalizeWispUrl: normalizeWispUrl,
+    getServerProtocol: getServerProtocol,
     getAllServers: getAllServers,
     addCustomServer: addCustomServer,
     removeCustomServer: removeCustomServer,
