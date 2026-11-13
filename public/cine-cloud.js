@@ -3,8 +3,24 @@
 // Cine-Cloud OS V1.5 Native Hub (106 AAA PC Cloud Games, Controller Navigation, Playtime & 9 Particle Modes)
 (function (window) {
   var STORE_KEY = "ibossbad.cineCloudStore.v1";
+  var FAVS_KEY = "ibossbad.cineCloudFavs.v1";
   var PARTICLE_KEY = "ibossbad.particleMode.v1";
   var AUTH_READY_KEY = "ibossbad.cineCloudAuth.v1";
+
+  function loadFavIds() {
+    try {
+      var arr = JSON.parse(window.localStorage.getItem(FAVS_KEY) || "[]");
+      return Array.isArray(arr) ? arr : [];
+    } catch (_e) {
+      return [];
+    }
+  }
+
+  function saveFavIds(arr) {
+    try {
+      window.localStorage.setItem(FAVS_KEY, JSON.stringify(arr));
+    } catch (_e) {}
+  }
 
   var PARTICLE_MODES = [
     { id: "stars", label: "Stars", icon: "✦" },
@@ -475,6 +491,8 @@
       });
       if (!g) return;
       var db = loadStore();
+      var favIds = loadFavIds();
+      var isFav = favIds.indexOf(g.id) !== -1;
       var stat = db[g.id] || { t: 0, l: 0 };
       var modal = container.querySelector("#ccModalBackdrop");
       if (!modal) return;
@@ -501,6 +519,9 @@
         '<button type="button" class="btn btn-primary btn-block cc-focusable" id="ccLaunchTabBtn">▶ Play via Ibossbad Proxy</button>' +
         '<button type="button" class="btn btn-secondary btn-block cc-focusable" id="ccLaunchEmbedBtn" style="margin-top:8px">🖵 Play Embedded Fullscreen</button>' +
         '<div style="display:flex;gap:8px;margin-top:8px">' +
+        '<button type="button" class="btn btn-secondary btn-xs cc-focusable" style="flex:1" id="ccToggleFavBtn">' +
+        (isFav ? "★ Favorited" : "☆ Favorite") +
+        "</button>" +
         '<button type="button" class="btn btn-secondary btn-xs cc-focusable" style="flex:1" id="ccLaunchPipBtn">🪟 PiP</button>' +
         '<button type="button" class="btn btn-secondary btn-xs cc-focusable" style="flex:1" id="ccCopyEmbedBtn">&lt;/&gt; Embed</button>' +
         "</div>" +
@@ -587,6 +608,18 @@
         recordGamePlayStart(g.id);
         modal.classList.add("hidden");
         openEmbeddedPlayer(g);
+      };
+
+      modal.querySelector("#ccToggleFavBtn").onclick = function () {
+        var curFavs = loadFavIds();
+        var ix = curFavs.indexOf(g.id);
+        if (ix === -1) {
+          curFavs.push(g.id);
+        } else {
+          curFavs.splice(ix, 1);
+        }
+        saveFavIds(curFavs);
+        openGameModal(g.id);
       };
 
       modal.querySelector("#ccLaunchPipBtn").onclick = function () {
@@ -797,7 +830,28 @@
           .slice(0, 10);
         var trendingGames = games.slice(8, 20);
 
+        var favList = loadFavIds();
+        var playedIds = Object.keys(db).filter(function (k) {
+          return db[k] && (db[k].t > 0 || db[k].l > 0);
+        });
+        var totalPlaySec = playedIds.reduce(function (acc, k) {
+          return acc + Number((db[k] && db[k].t) || 0);
+        }, 0);
+
         bodyHtml =
+          '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">' +
+          '<span class="cat-pill">⏱️ Cloud Playtime: <strong>' +
+          escapeHtml(formatShortPlaytime(totalPlaySec)) +
+          "</strong></span>" +
+          '<span class="cat-pill">🎮 Played: <strong>' +
+          playedIds.length +
+          "/" +
+          games.length +
+          "</strong></span>" +
+          '<span class="cat-pill">★ Favorites: <strong>' +
+          favList.length +
+          "</strong></span>" +
+          "</div>" +
           (activeHero
             ? '<div class="cc-hero-banner cc-focusable" id="ccHeroCard" data-cc-open="' +
               escapeHtml(activeHero.game.id) +
@@ -879,8 +933,10 @@
           }, 6000);
         }
       } else if (currentSubTab === "lib") {
+        var favIdsLib = loadFavIds();
         var tagOptions = [
           "all",
+          "favorites",
           "Open World",
           "RPG",
           "Action",
@@ -893,7 +949,14 @@
         ];
         var qLower = libQuery.trim().toLowerCase();
         var filtered = games.filter(function (g) {
-          if (libTag !== "all" && (g.tags || []).indexOf(libTag) === -1) {
+          if (libTag === "favorites" && favIdsLib.indexOf(g.id) === -1) {
+            return false;
+          }
+          if (
+            libTag !== "all" &&
+            libTag !== "favorites" &&
+            (g.tags || []).indexOf(libTag) === -1
+          ) {
             return false;
           }
           if (!qLower) return true;
@@ -917,13 +980,19 @@
           '<div class="games-cat-strip">' +
           tagOptions
             .map(function (tg) {
+              var lbl =
+                tg === "all"
+                  ? "All (" + games.length + ")"
+                  : tg === "favorites"
+                  ? "★ Favorites (" + favIdsLib.length + ")"
+                  : tg;
               return (
                 '<button type="button" class="cat-pill cc-focusable' +
                 (libTag === tg ? " active" : "") +
                 '" data-cc-tag="' +
                 escapeHtml(tg) +
                 '">' +
-                escapeHtml(tg === "all" ? "All (" + games.length + ")" : tg) +
+                escapeHtml(lbl) +
                 "</button>"
               );
             })
@@ -1018,12 +1087,22 @@
         '<button type="button" class="cat-pill cc-focusable' +
         (currentSubTab === "set" ? " active" : "") +
         '" data-cc-tab="set">✨ Particles &amp; Gamepad</button>' +
+        '<button type="button" class="cat-pill cc-focusable" id="ccRandomPickBtn">🎲 Surprise AAA</button>' +
         "</div>" +
         "</div>" +
         bodyHtml +
         '<div id="ccModalBackdrop" class="cc-modal-backdrop hidden"></div>' +
         '<div id="ccEmbeddedPlayer" class="cc-embedded-player hidden"></div>' +
         "</div>";
+
+      var randomPickBtn = container.querySelector("#ccRandomPickBtn");
+      if (randomPickBtn) {
+        randomPickBtn.onclick = function () {
+          if (!games.length) return;
+          var pick = games[Math.floor(Math.random() * games.length)];
+          openGameModal(pick.id);
+        };
+      }
 
       container.querySelectorAll("[data-cc-tab]").forEach(function (btn) {
         btn.onclick = function () {
