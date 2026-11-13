@@ -113,6 +113,24 @@
           desc: "Download files through the proxy with clean custom filenames.",
         },
         {
+          url: "iboss://diagnostics",
+          title: "WISP Benchmarker & Diagnostics",
+          desc:
+            "Benchmark RTT latency across all 7 WISP relays & view browser health.",
+        },
+        {
+          url: "iboss://history",
+          title: "Workspaces & Local History",
+          desc:
+            "Save multi-tab workspace snapshots & search private local history.",
+        },
+        {
+          url: "iboss://tools",
+          title: "Study & Power Utilities",
+          desc:
+            "Scratchpad, Base64/JWT codec, crypto password generator & math engine.",
+        },
+        {
           url: "iboss://storage",
           title: "Storage & Game-Save Backup",
           desc:
@@ -173,9 +191,16 @@
     function renderChangelog(container) {
       container.innerHTML =
         '<div class="internal-wrap">' +
-        '<div class="internal-hero"><h1>Ibossbad v4.0 Changelog</h1>' +
-        "<p>Scramjet + BareMux WASM TLS + Media/Emulator + WebOS Desktop + Admin v2</p></div>" +
+        '<div class="internal-hero"><h1>Ibossbad v5.0 Changelog</h1>' +
+        "<p>10x Flagship Polish · Command Palette · WISP Benchmarker · Permanent Admin Accounts · Workspaces</p></div>" +
         '<div class="changelog-list">' +
+        '<div class="internal-panel" style="margin-bottom:14px"><h3>v5.0 — Command Palette, WISP Benchmarker, Workspaces, Tools &amp; Permanent Admin Accounts</h3>' +
+        "<ul>" +
+        "<li>Added <strong>Universal Command Palette (<code>Ctrl+K</code>)</strong>: Instant fuzzy search across all 200+ games, <code>iboss://</code> pages, open tabs, 1-click mods, themes, and cloaks.</li>" +
+        "<li>Added <strong>Permanent Cloud Account Admin Role (<code>ADMIN</code>)</strong>: Bind any Supabase account as permanent Admin in 1 click inside <code>iboss://admin</code> (plus Admin Audit Log, Chat Slow-Mode &amp; Blocked-Word Filter).</li>" +
+        "<li>Added <strong><code>iboss://diagnostics</code></strong> (7-relay WISP WebSocket RTT latency benchmarker + 1-click Fastest Relay), <strong><code>iboss://history</code></strong> (Multi-Tab Workspaces &amp; private local history), and <strong><code>iboss://tools</code></strong> (Scratchpad, JWT/Base64 Codec, Crypto Keygen &amp; Scientific Math).</li>" +
+        "<li>Added <strong>Smart Omnibox Autocomplete</strong>, <strong>Rich Tab Right-Click Context Menu</strong> (Duplicate, Pin, Mute, Sleep, Popout PiP, Close Others), <strong>8 Curated Themes</strong>, and <strong>PWA Installability</strong>.</li>" +
+        "</ul></div>" +
         '<div class="internal-panel" style="margin-bottom:14px"><h3>v4.0 — Media Hub, Retro EmulatorJS, 1-Click Mod Store, WebOS &amp; Admin v2</h3>' +
         "<ul>" +
         "<li>Added <strong><code>iboss://media</code></strong>: Ad-free YouTube/Invidious/Piped smart bypass, persistent background Lofi/Synthwave radio mini-bar, and streaming apps.</li>" +
@@ -316,6 +341,7 @@
         (pads.length
           ? '<span class="cat-pill active">🎮 Gamepad Ready</span>'
           : "") +
+        '<button type="button" class="btn btn-primary" id="surpriseGameBtn">🎲 Surprise Me</button>' +
         '<button type="button" class="btn btn-secondary" id="jumpEmulatorBtn">🕹️ Retro ROM Player</button>' +
         '<button type="button" class="btn btn-secondary" id="openGameReqModalBtn">+ Request Game / Report Broken</button>' +
         "</div></div>" +
@@ -422,6 +448,16 @@
           })
           .join("") +
         "</div></div>";
+
+      container
+        .querySelector("#surpriseGameBtn")
+        .addEventListener("click", function () {
+          if (!results.length) return;
+          var pick = results[Math.floor(Math.random() * results.length)];
+          recordRecentGame(pick.url, pick.title);
+          hooks.toast("Launching " + pick.title + "!");
+          hooks.openInNewTab(pick.url);
+        });
 
       container
         .querySelector("#jumpEmulatorBtn")
@@ -869,6 +905,18 @@
       }
       if (clean === "iboss://desktop" && hooks.mediaEmulator) {
         hooks.mediaEmulator.renderDesktopMode(container);
+        return true;
+      }
+      if (clean === "iboss://diagnostics" && hooks.diagnosticsTools) {
+        hooks.diagnosticsTools.renderDiagnosticsPage(container);
+        return true;
+      }
+      if (clean === "iboss://history" && hooks.diagnosticsTools) {
+        hooks.diagnosticsTools.renderHistoryAndWorkspacesPage(container);
+        return true;
+      }
+      if (clean === "iboss://tools" && hooks.diagnosticsTools) {
+        hooks.diagnosticsTools.renderToolsPage(container);
         return true;
       }
       if (clean === "iboss://extensions") {
