@@ -78,6 +78,17 @@ test("v7.0 Visual & GUI Overhaul: HD artwork banners, visual-art engine, Bento s
       );
     }
 
+    var jojoCoverRes = await rawGet(
+      port,
+      "/ui/assets/game-covers/jojo-s-bizarre-adventure-heritage-for-the-future.webp"
+    );
+    t.equal(jojoCoverRes.status, 200, "Serves a searched game cover locally");
+    t.equal(
+      jojoCoverRes.headers["content-type"],
+      "image/webp",
+      "Serves game covers with the WebP MIME type"
+    );
+
     var shellRes = await rawGet(port, "/");
     var html = shellRes.body.toString("utf8");
     t.ok(
@@ -116,6 +127,90 @@ test("v7.0 Visual & GUI Overhaul: HD artwork banners, visual-art engine, Bento s
     vm.runInNewContext(vaSrc, { window: win, Math: Math });
 
     t.ok(win.IbossVisualArt, "Exports window.IbossVisualArt");
+
+    var catalogSrc = fs.readFileSync(
+      path.join(__dirname, "..", "public", "games-catalog.js"),
+      "utf8"
+    );
+    var catalogWindow = {};
+    vm.runInNewContext(catalogSrc, { window: catalogWindow });
+    var builtInCatalog = catalogWindow.IbossGamesCatalog.builtin;
+    var gameCoverDir = path.join(
+      __dirname,
+      "..",
+      "public",
+      "assets",
+      "game-covers"
+    );
+    var coverFiles = fs.readdirSync(gameCoverDir).filter(function (file) {
+      return path.extname(file).toLowerCase() === ".webp";
+    });
+    var missingGameCovers = builtInCatalog.filter(function (game) {
+      return (
+        !game.cover ||
+        !fs.existsSync(path.join(gameCoverDir, path.basename(game.cover)))
+      );
+    });
+    var invalidGameCovers = coverFiles.filter(function (file) {
+      var image = fs.readFileSync(path.join(gameCoverDir, file));
+      return (
+        image.length < 100 ||
+        image.toString("ascii", 0, 4) !== "RIFF" ||
+        image.toString("ascii", 8, 12) !== "WEBP"
+      );
+    });
+
+    t.equal(
+      builtInCatalog.length,
+      207,
+      "Catalog includes all 207 built-in tiles"
+    );
+    t.equal(
+      coverFiles.length,
+      builtInCatalog.length,
+      "Each built-in game and app has a locally served cover file"
+    );
+    t.same(
+      missingGameCovers,
+      [],
+      "Every built-in catalog item resolves to a cover"
+    );
+    t.same(invalidGameCovers, [], "All covers are valid non-empty WebP images");
+
+    var coverSourceManifest = JSON.parse(
+      fs.readFileSync(path.join(gameCoverDir, "sources.json"), "utf8")
+    );
+    var missingCorrectedCoverSources = [
+      "p-craft.webp",
+      "shadow-fight.webp",
+      "the-treasure.webp",
+      "vex-4.webp",
+      "vex-5.webp",
+    ].filter(function (file) {
+      var source = coverSourceManifest.assets[file];
+      return (
+        !source || !source.sourcePage || source.rightsStatus !== "unverified"
+      );
+    });
+    t.same(
+      missingCorrectedCoverSources,
+      [],
+      "Corrected covers keep source-page and rights-status notes"
+    );
+    t.match(
+      coverSourceManifest.assets["the-treasure.webp"].matchNote,
+      /game title-card/i,
+      "The Treasure uses game-specific title art rather than generic room art"
+    );
+
+    var jojoArt = win.IbossVisualArt.getGameCoverMeta(builtInCatalog[0]);
+    t.equal(
+      jojoArt.photo,
+      builtInCatalog[0].cover,
+      "Uses searched JoJo cover instead of a generic category banner"
+    );
+    t.ok(jojoArt.hasGameCover, "Marks searched covers for poster rendering");
+
     var mcCover = win.IbossVisualArt.getGameCoverMeta({
       title: "EaglerCraft 1.8",
       category: "sandbox",

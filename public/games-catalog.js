@@ -3,15 +3,32 @@
 (function (window) {
   var MGG_BASE = "/mgg-games/";
 
+  function gameCoverPath(title) {
+    var slug = String(title || "game")
+      .toLowerCase()
+      .replace(/&/g, " and ")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    return "/ui/assets/game-covers/" + slug + ".webp";
+  }
+
   function healLegacyGameUrl(rawUrl) {
     if (!rawUrl || typeof rawUrl !== "string") return rawUrl;
-    var m = rawUrl.match(
+    var trimmed = rawUrl.trim();
+    var iframeMatch = trimmed.match(/<iframe[^>]+src=["']([^"']+)["']/i);
+    if (iframeMatch && iframeMatch[1]) {
+      trimmed = iframeMatch[1].trim();
+    }
+    if (/retrogames\.cc\/embed\/8843-jojos-bizarre-adventure/i.test(trimmed)) {
+      return "iboss://jojo";
+    }
+    var m = trimmed.match(
       /^https?:\/\/(?:monkeygg2\.github\.io|pijgalk\.desarrollos-lowcost\.com)\/games\/(.*)$/i
     );
     if (m) {
       return "/mgg-games/" + m[1];
     }
-    return rawUrl;
+    return trimmed;
   }
 
   function mgg(title, subPath, category, aliases) {
@@ -22,6 +39,7 @@
     return {
       title: title,
       url: full,
+      cover: gameCoverPath(title),
       category: category || "arcade",
       aliases: aliases || [],
       source: "MonkeyGG2",
@@ -32,6 +50,7 @@
     return {
       title: title,
       url: url,
+      cover: gameCoverPath(title),
       category: category || "featured",
       aliases: aliases || [],
       source: "Web",
@@ -40,6 +59,24 @@
 
   var BUILTIN_CATALOG = [
     // Featured Web Games & Apps
+    ext(
+      "JoJo's Bizarre Adventure: Heritage for the Future",
+      "iboss://jojo",
+      "featured",
+      [
+        "jojo",
+        "jjba",
+        "hftf",
+        "heritage for the future",
+        "fighting",
+        "arcade",
+        "cps3",
+        "stand",
+        "jotaro",
+        "dio",
+        "jojo no kimyou na bouken",
+      ]
+    ),
     ext("Neal.fun", "https://neal.fun/", "featured", ["neal", "sandbox"]),
     ext("Infinite Craft", "https://neal.fun/infinite-craft/", "featured", [
       "craft",

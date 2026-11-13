@@ -396,6 +396,87 @@
             allowInvalidJs: true,
             allowFailedIntercepts: true,
           },
+          codec: {
+            encode: function (str) {
+              if (!str) return str;
+              var B64 =
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+              var key = [90, 51, 113, 25];
+              var esc = encodeURIComponent(String(str));
+              var bytes = [];
+              for (var i = 0; i < esc.length; i++) {
+                if (esc.charAt(i) === "%") {
+                  bytes.push(parseInt(esc.slice(i + 1, i + 3), 16));
+                  i += 2;
+                } else {
+                  bytes.push(esc.charCodeAt(i));
+                }
+              }
+              for (var j = 0; j < bytes.length; j++) {
+                bytes[j] = bytes[j] ^ key[j & 3];
+              }
+              var out = "u1_";
+              for (var k = 0; k < bytes.length; k += 3) {
+                var b0 = bytes[k];
+                var b1 = k + 1 < bytes.length ? bytes[k + 1] : 0;
+                var b2 = k + 2 < bytes.length ? bytes[k + 2] : 0;
+                out += B64.charAt(b0 >> 2);
+                out += B64.charAt(((b0 & 3) << 4) | (b1 >> 4));
+                if (k + 1 < bytes.length) {
+                  out += B64.charAt(((b1 & 15) << 2) | (b2 >> 6));
+                }
+                if (k + 2 < bytes.length) {
+                  out += B64.charAt(b2 & 63);
+                }
+              }
+              return out;
+            },
+            decode: function (str) {
+              if (!str) return str;
+              var decSeg = function (seg) {
+                if (!seg) return seg;
+                if (seg.indexOf("u1_") === 0) {
+                  var B64 =
+                    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+                  var qIdx = seg.indexOf("?");
+                  var tok = qIdx === -1 ? seg.slice(3) : seg.slice(3, qIdx);
+                  var extraQ = qIdx === -1 ? "" : seg.slice(qIdx);
+                  var bytes = [];
+                  for (var i = 0; i < tok.length; i += 4) {
+                    var c0 = B64.indexOf(tok.charAt(i));
+                    var c1 = B64.indexOf(tok.charAt(i + 1));
+                    var c2 =
+                      i + 2 < tok.length ? B64.indexOf(tok.charAt(i + 2)) : -1;
+                    var c3 =
+                      i + 3 < tok.length ? B64.indexOf(tok.charAt(i + 3)) : -1;
+                    if (c0 < 0 || c1 < 0) break;
+                    bytes.push((c0 << 2) | (c1 >> 4));
+                    if (c2 >= 0) bytes.push(((c1 & 15) << 4) | (c2 >> 2));
+                    if (c3 >= 0) bytes.push(((c2 & 3) << 6) | c3);
+                  }
+                  var key = [90, 51, 113, 25];
+                  var pct = "";
+                  for (var j = 0; j < bytes.length; j++) {
+                    var v = (bytes[j] ^ key[j & 3]) & 255;
+                    pct += "%" + (v < 16 ? "0" : "") + v.toString(16);
+                  }
+                  var res = decodeURIComponent(pct);
+                  if (extraQ) {
+                    res +=
+                      (res.indexOf("?") === -1 ? "?" : "&") + extraQ.slice(1);
+                  }
+                  return res;
+                }
+                return decodeURIComponent(seg);
+              };
+              var raw = String(str);
+              var hIdx = raw.indexOf("#");
+              if (hIdx === -1) return decSeg(raw);
+              return (
+                decSeg(raw.slice(0, hIdx)) + "#" + decSeg(raw.slice(hIdx + 1))
+              );
+            },
+          },
         });
 
         // Intercept proxied file downloads cleanly
@@ -820,7 +901,7 @@
       },
       encodeUrl: function (targetUrl) {
         if (!controller) {
-          return "/scramjet/" + encodeURIComponent(targetUrl);
+          return "/scramjet/" + encodeStealthToken(targetUrl);
         }
         return controller.encodeUrl(targetUrl);
       },
@@ -936,7 +1017,79 @@
     };
   }
 
+  function encodeStealthToken(str) {
+    if (!str) return "";
+    var B64 =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    var key = [90, 51, 113, 25];
+    var esc = encodeURIComponent(String(str));
+    var bytes = [];
+    for (var i = 0; i < esc.length; i++) {
+      if (esc.charAt(i) === "%") {
+        bytes.push(parseInt(esc.slice(i + 1, i + 3), 16));
+        i += 2;
+      } else {
+        bytes.push(esc.charCodeAt(i));
+      }
+    }
+    for (var j = 0; j < bytes.length; j++) {
+      bytes[j] = bytes[j] ^ key[j & 3];
+    }
+    var out = "u1_";
+    for (var k = 0; k < bytes.length; k += 3) {
+      var b0 = bytes[k];
+      var b1 = k + 1 < bytes.length ? bytes[k + 1] : 0;
+      var b2 = k + 2 < bytes.length ? bytes[k + 2] : 0;
+      out += B64.charAt(b0 >> 2);
+      out += B64.charAt(((b0 & 3) << 4) | (b1 >> 4));
+      if (k + 1 < bytes.length) out += B64.charAt(((b1 & 15) << 2) | (b2 >> 6));
+      if (k + 2 < bytes.length) out += B64.charAt(b2 & 63);
+    }
+    return out;
+  }
+
+  function decodeStealthToken(str) {
+    if (!str) return "";
+    var raw = String(str);
+    if (raw.indexOf("u1_") === 0) {
+      var B64 =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+      var qIdx = raw.indexOf("?");
+      var tok = qIdx === -1 ? raw.slice(3) : raw.slice(3, qIdx);
+      var extraQ = qIdx === -1 ? "" : raw.slice(qIdx);
+      var bytes = [];
+      for (var i = 0; i < tok.length; i += 4) {
+        var c0 = B64.indexOf(tok.charAt(i));
+        var c1 = B64.indexOf(tok.charAt(i + 1));
+        var c2 = i + 2 < tok.length ? B64.indexOf(tok.charAt(i + 2)) : -1;
+        var c3 = i + 3 < tok.length ? B64.indexOf(tok.charAt(i + 3)) : -1;
+        if (c0 < 0 || c1 < 0) break;
+        bytes.push((c0 << 2) | (c1 >> 4));
+        if (c2 >= 0) bytes.push(((c1 & 15) << 4) | (c2 >> 2));
+        if (c3 >= 0) bytes.push(((c2 & 3) << 6) | c3);
+      }
+      var key = [90, 51, 113, 25];
+      var pct = "";
+      for (var j = 0; j < bytes.length; j++) {
+        var v = (bytes[j] ^ key[j & 3]) & 255;
+        pct += "%" + (v < 16 ? "0" : "") + v.toString(16);
+      }
+      var res = decodeURIComponent(pct);
+      if (extraQ) {
+        res += (res.indexOf("?") === -1 ? "?" : "&") + extraQ.slice(1);
+      }
+      return res;
+    }
+    try {
+      return decodeURIComponent(raw);
+    } catch (_e) {
+      return raw;
+    }
+  }
+
   window.IbossScramjetEngine = {
     create: createScramjetEngine,
+    encodeStealthToken: encodeStealthToken,
+    decodeStealthToken: decodeStealthToken,
   };
 })(window);

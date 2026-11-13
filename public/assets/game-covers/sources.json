@@ -1,0 +1,41 @@
+{
+  "lastAudited": "2026-11-12",
+  "rightsNote": "Source pages establish image provenance and game relevance, not permission to redistribute. Rights and licenses were not independently verified.",
+  "assets": {
+    "p-craft.webp": {
+      "game": "P.Craft",
+      "sourcePage": "https://www.moddb.com/games/pcraft/downloads/pcraft",
+      "matchNote": "Title artwork visibly reads P.CRAFT by NuSan, 2017.",
+      "rightsStatus": "unverified"
+    },
+    "shadow-fight.webp": {
+      "game": "Shadow Fight (MonkeyGG2-hosted build)",
+      "sourceImage": "https://github.com/MonkeyGG2/monkeygg2.github.io/blob/main/games/shadow-fight/icons/loading-logo.png",
+      "sourcePage": "https://github.com/MonkeyGG2/monkeygg2.github.io/tree/main/games/shadow-fight/icons",
+      "matchNote": "Uses the title logo bundled with this hosted game, not Nekki's separate Shadow Fight 2 artwork.",
+      "rightsStatus": "unverified"
+    },
+    "the-treasure.webp": {
+      "game": "The Treasure",
+      "developer": "KOTORINOSU",
+      "sourceImage": "https://play-lh.googleusercontent.com/si-MNy1QCrahXvzY5gmBEooBfH5k3BUzbGBgKStapZ8_ttp-H5QZ6_CC7DWxFWTC-tH1q1aRsBy-yek0jwkccRo=w526-h296",
+      "sourcePage": "https://play.google.com/store/apps/details?id=net.kotorinosu.treasure&hl=en",
+      "matchNote": "Game title-card image from the developer's official Android store listing; rights remain unverified.",
+      "rightsStatus": "unverified"
+    },
+    "vex-4.webp": {
+      "game": "Vex 4",
+      "sourceImage": "https://cdn.content.play123.com/game-images/vex-4_big.webp",
+      "sourcePage": "https://www.play123.com/game/vex-4",
+      "matchNote": "Artwork visibly identifies Vex 4 and shows its stick-figure platforming theme.",
+      "rightsStatus": "unverified"
+    },
+    "vex-5.webp": {
+      "game": "Vex 5",
+      "sourceImage": "https://www.contezero.com/user/pages/03.games/01.action/vex-5/Vex5.jpg",
+      "sourcePage": "https://www.contezero.com/games/action/vex-5",
+      "matchNote": "Artwork visibly identifies Vex 5 and shows its stick-figure platforming theme.",
+      "rightsStatus": "unverified"
+    }
+  }
+}

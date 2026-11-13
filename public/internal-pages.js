@@ -3,6 +3,7 @@
 (function (window) {
   var FAV_GAMES_KEY = "ibossbad_fav_games_v1";
   var RECENT_GAMES_KEY = "ibossbad_recent_games_v1";
+  var HIDDEN_GAMES_KEY = "ibossbad_hidden_games_v1";
 
   var CAT_GRADIENTS = {
     featured: "linear-gradient(135deg, #0ea5e9 0%, #6366f1 100%)",
@@ -46,6 +47,26 @@
     var activeGameCategory = "all";
     var activeGameQuery = "";
     var activeGameSort = "featured";
+    var gameCoverSourcesPromise = null;
+
+    function loadGameCoverSources() {
+      if (!gameCoverSourcesPromise) {
+        gameCoverSourcesPromise = fetch("/ui/assets/game-covers/sources.json")
+          .then(function (response) {
+            if (!response.ok)
+              throw new Error("Cover source manifest unavailable");
+            return response.json();
+          })
+          .then(function (manifest) {
+            return manifest && manifest.assets ? manifest.assets : {};
+          })
+          .catch(function () {
+            gameCoverSourcesPromise = null;
+            return {};
+          });
+      }
+      return gameCoverSourcesPromise;
+    }
 
     // Launchpad Pomodoro & Procedural WebAudio Synth state
     var LP_TASKS_KEY = "ibossbad.launchpadTasks.v1";
@@ -90,6 +111,12 @@
           title: "Games & Apps Library (200+)",
           desc:
             "Favorites, Recently Played, self-mirrored HTML5 + Ruffle Flash lineup.",
+        },
+        {
+          url: "iboss://jojo",
+          title: "JoJo's Bizarre Adventure: Heritage for the Future",
+          desc:
+            "CPS-3 Arcade (Japan 990927 No-CD) inside a Closed Shadow stage with cloaked perceived links.",
         },
         {
           url: "iboss://cinecloud",
@@ -236,7 +263,7 @@
         '<div class="internal-panel" style="margin-bottom:14px"><h3>v7.0 — Visual Artwork, Illustrated Game Covers, Wallpapers &amp; Flagship GUI Overhaul</h3>' +
         "<ul>" +
         "<li>Added <strong>10 Bespoke HD Artwork Banners &amp; Switchable Wallpapers</strong> (<em>Cosmic Nebula</em>, <em>Liquid Sapphire</em>, <em>Neon City</em>, <em>Minimal Dark</em>) across New Tab, Auth Gate, Games, Media, Emulator &amp; WebOS Desktop.</li>" +
-        "<li>Added <strong>Illustrated Poster Covers for All 206+ Games</strong> combining genre photography, per-game color grading, custom vector emblems, and hover-zoom 1-click Play overlays.</li>" +
+        "<li>Added <strong>Local WebP cover files for 207 game-catalog entries</strong> with poster rendering; cover attribution and redistribution-rights verification remains incomplete.</li>" +
         "<li>Added <strong>New Tab Visual Bento Showcase</strong>, crisp vector brand icons across Quick Launch, Bookmarks, Tabs &amp; Omnibox, and animated audio equalizer bars in <code>iboss://media</code>.</li>" +
         "</ul></div>" +
         '<div class="internal-panel" style="margin-bottom:14px"><h3>v6.0 — Turbo Speed Engine &amp; Chromebook Optimization Suite</h3>' +
@@ -352,24 +379,41 @@
     function renderGamesHub(container) {
       var customGames = hooks.getCustomGames ? hooks.getCustomGames() : [];
       var favUrls = loadStringList(FAV_GAMES_KEY);
-      var recentList = loadJsonList(RECENT_GAMES_KEY);
+      var hiddenUrls = loadStringList(HIDDEN_GAMES_KEY);
+      var recentList = loadJsonList(RECENT_GAMES_KEY).filter(function (game) {
+        return game && hiddenUrls.indexOf(game.url) === -1;
+      });
       var baseCats = window.IbossGamesCatalog
         ? window.IbossGamesCatalog.categories
         : [];
       var allCatalog = window.IbossGamesCatalog
         ? window.IbossGamesCatalog.search("", "all", customGames)
         : [];
+      var hiddenCatalogCount = allCatalog.filter(function (item) {
+        return hiddenUrls.indexOf(item.url) !== -1;
+      }).length;
+      var favoriteCatalogCount = allCatalog.filter(function (item) {
+        return (
+          favUrls.indexOf(item.url) !== -1 &&
+          hiddenUrls.indexOf(item.url) === -1
+        );
+      }).length;
       var catCounts = {};
       allCatalog.forEach(function (item) {
+        if (hiddenUrls.indexOf(item.url) !== -1) return;
         catCounts[item.category] = (catCounts[item.category] || 0) + 1;
       });
 
       var cats = [
         {
           id: "all",
-          label: "All Games (" + allCatalog.length + ")",
+          label: "All Games (" + (allCatalog.length - hiddenCatalogCount) + ")",
         },
-        { id: "favorites", label: "★ Favorites (" + favUrls.length + ")" },
+        {
+          id: "favorites",
+          label: "★ Favorites (" + favoriteCatalogCount + ")",
+        },
+        { id: "hidden", label: "Hidden (" + hiddenCatalogCount + ")" },
       ].concat(
         baseCats.slice(1).map(function (bc) {
           var cnt = catCounts[bc.id] || 0;
@@ -381,7 +425,14 @@
       );
 
       var results;
-      if (activeGameCategory === "favorites") {
+      if (activeGameCategory === "hidden") {
+        results = window.IbossGamesCatalog
+          ? window.IbossGamesCatalog.search(activeGameQuery, "all", customGames)
+          : [];
+        results = results.filter(function (g) {
+          return hiddenUrls.indexOf(g.url) !== -1;
+        });
+      } else if (activeGameCategory === "favorites") {
         results = window.IbossGamesCatalog.search(
           activeGameQuery,
           "all",
@@ -397,6 +448,11 @@
               customGames
             )
           : [];
+      }
+      if (activeGameCategory !== "hidden") {
+        results = results.filter(function (g) {
+          return hiddenUrls.indexOf(g.url) === -1;
+        });
       }
 
       if (activeGameSort === "az") {
@@ -423,9 +479,9 @@
         '<div class="hub-hero-scrim"></div>' +
         '<div class="hub-hero-body">' +
         "<div>" +
-        '<span class="bento-kicker">🎮 206+ HTML5, WebGL &amp; Ruffle Flash Titles · Instant SW Cache</span>' +
+        '<span class="bento-kicker">🎮 207+ HTML5, WebGL &amp; Ruffle Flash Titles · Instant SW Cache</span>' +
         "<h1>Games &amp; Apps Arcade</h1>" +
-        "<p>Hover any poster to pre-warm TLS, star your favorites, or pop games into a floating PiP mini-window.</p>" +
+        "<p>Open game details, keep favorites, hide titles you do not want, or launch a floating mini-window.</p>" +
         "</div>" +
         '<div class="games-header-actions" style="display:flex;gap:8px;flex-wrap:wrap">' +
         (pads.length
@@ -499,10 +555,18 @@
         '<div class="games-count-label">Showing <strong>' +
         results.length +
         "</strong> titles</div>" +
+        (results.length
+          ? ""
+          : '<div class="games-empty-state" role="status">' +
+            (activeGameCategory === "hidden"
+              ? "No games are hidden. Use Hide on a title to keep it out of your library."
+              : "No games match the current search or filters.") +
+            "</div>") +
         '<div class="games-catalog-grid" id="gamesCatalogGrid">' +
         results
           .map(function (g) {
             var isFav = favUrls.indexOf(g.url) !== -1;
+            var isHidden = hiddenUrls.indexOf(g.url) !== -1;
             var grad = CAT_GRADIENTS[g.category] || CAT_GRADIENTS.featured;
             var art =
               window.IbossVisualArt && window.IbossVisualArt.getGameCoverMeta
@@ -518,13 +582,25 @@
               (art
                 ? '<img src="' +
                   esc(art.photo) +
-                  '" alt="" loading="lazy" class="game-cover-photo" style="filter:hue-rotate(' +
-                  art.hueShift +
-                  'deg) saturate(1.15)" />' +
-                  '<div class="game-cover-scrim"></div>' +
-                  '<svg viewBox="0 0 64 64" class="game-cover-glyph" aria-hidden="true">' +
-                  art.glyphSvg +
-                  "</svg>"
+                  '" alt="' +
+                  esc(g.title + " cover art") +
+                  '" loading="lazy" class="game-cover-photo' +
+                  (art.hasGameCover ? " game-cover-photo-real" : "") +
+                  '"' +
+                  (art.hasGameCover
+                    ? ""
+                    : ' style="filter:hue-rotate(' +
+                      art.hueShift +
+                      'deg) saturate(1.15)"') +
+                  " />" +
+                  '<div class="game-cover-scrim' +
+                  (art.hasGameCover ? " game-cover-scrim-real" : "") +
+                  '"></div>' +
+                  (art.hasGameCover
+                    ? ""
+                    : '<svg viewBox="0 0 64 64" class="game-cover-glyph" aria-hidden="true">' +
+                      art.glyphSvg +
+                      "</svg>")
                 : "") +
               '<span class="game-cover-cat-pill">' +
               esc(g.category) +
@@ -545,7 +621,18 @@
               esc(g.title) +
               "</div>" +
               '<div class="game-tile-actions">' +
-              '<button type="button" class="btn btn-primary btn-xs" data-play-url="' +
+              '<button type="button" class="btn btn-ghost btn-xs" data-game-details-url="' +
+              esc(g.url) +
+              '" aria-label="Details for ' +
+              esc(g.title) +
+              '" aria-expanded="false">Info</button>' +
+              '<button type="button" class="btn btn-ghost btn-xs" data-hide-url="' +
+              esc(g.url) +
+              '" title="' +
+              (isHidden ? "Show this game in the catalog" : "Hide this game") +
+              '">' +
+              (isHidden ? "Unhide" : "Hide") +
+              '</button><button type="button" class="btn btn-primary btn-xs" data-play-url="' +
               esc(g.url) +
               '" data-play-title="' +
               esc(g.title) +
@@ -559,7 +646,14 @@
             );
           })
           .join("") +
-        "</div></div>";
+        "</div>" +
+        '<div id="gameDetailsBackdrop" class="game-detail-backdrop hidden" aria-hidden="true">' +
+        '<aside class="game-detail-drawer" role="dialog" aria-modal="true" aria-labelledby="gameDetailsTitle">' +
+        '<header class="game-detail-drawer-header"><div><span id="gameDetailsCategory" class="game-detail-category"></span><h2 id="gameDetailsTitle">Game details</h2></div>' +
+        '<button type="button" id="gameDetailsCloseBtn" class="icon-btn" aria-label="Close game details">✕</button></header>' +
+        '<div id="gameDetailsBody" class="game-detail-drawer-body" aria-live="polite"></div>' +
+        '<footer class="game-detail-drawer-footer"><button type="button" id="gameDetailsPlayBtn" class="btn btn-primary" disabled>Play game</button></footer>' +
+        "</aside></div></div>";
 
       container
         .querySelector("#surpriseGameBtn")
@@ -621,6 +715,18 @@
         });
       });
 
+      container.querySelectorAll("[data-hide-url]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var url = btn.getAttribute("data-hide-url");
+          var hidden = loadStringList(HIDDEN_GAMES_KEY);
+          var index = hidden.indexOf(url);
+          if (index === -1) hidden.push(url);
+          else hidden.splice(index, 1);
+          saveStringList(HIDDEN_GAMES_KEY, hidden);
+          renderGamesHub(container);
+        });
+      });
+
       container.querySelectorAll("[data-play-url]").forEach(function (btn) {
         btn.addEventListener("click", function () {
           var u = btn.getAttribute("data-play-url");
@@ -629,6 +735,132 @@
           hooks.openInNewTab(u);
         });
       });
+
+      var detailsBackdrop = container.querySelector("#gameDetailsBackdrop");
+      var detailsCloseButton = container.querySelector("#gameDetailsCloseBtn");
+      var detailsTitle = container.querySelector("#gameDetailsTitle");
+      var detailsCategory = container.querySelector("#gameDetailsCategory");
+      var detailsBody = container.querySelector("#gameDetailsBody");
+      var detailsPlayButton = container.querySelector("#gameDetailsPlayBtn");
+      var activeDetailsGame = null;
+      var lastDetailsTrigger = null;
+
+      function closeGameDetails() {
+        if (detailsBackdrop) {
+          detailsBackdrop.classList.add("hidden");
+          detailsBackdrop.setAttribute("aria-hidden", "true");
+        }
+        if (lastDetailsTrigger) {
+          lastDetailsTrigger.setAttribute("aria-expanded", "false");
+          lastDetailsTrigger.textContent = "Info";
+          lastDetailsTrigger.focus();
+          lastDetailsTrigger = null;
+        }
+        activeDetailsGame = null;
+      }
+
+      if (detailsCloseButton) {
+        detailsCloseButton.addEventListener("click", closeGameDetails);
+      }
+      if (detailsBackdrop) {
+        detailsBackdrop.addEventListener("click", function (event) {
+          if (event.target === detailsBackdrop) closeGameDetails();
+        });
+        detailsBackdrop.addEventListener("keydown", function (event) {
+          if (event.key === "Escape") closeGameDetails();
+        });
+      }
+      if (detailsPlayButton) {
+        detailsPlayButton.addEventListener("click", function () {
+          if (!activeDetailsGame) return;
+          recordRecentGame(activeDetailsGame.url, activeDetailsGame.title);
+          hooks.openInNewTab(activeDetailsGame.url);
+        });
+      }
+
+      container
+        .querySelectorAll("[data-game-details-url]")
+        .forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            var url = btn.getAttribute("data-game-details-url");
+            var game = window.IbossGamesCatalog.builtin
+              .concat(customGames)
+              .filter(function (item) {
+                return item.url === url;
+              })[0];
+            if (!game || !detailsBackdrop || !detailsTitle || !detailsBody) {
+              return;
+            }
+            if (
+              activeDetailsGame &&
+              activeDetailsGame.url === game.url &&
+              !detailsBackdrop.classList.contains("hidden")
+            ) {
+              closeGameDetails();
+              return;
+            }
+            if (lastDetailsTrigger && lastDetailsTrigger !== btn) {
+              lastDetailsTrigger.setAttribute("aria-expanded", "false");
+              lastDetailsTrigger.textContent = "Info";
+            }
+            activeDetailsGame = game;
+            lastDetailsTrigger = btn;
+            btn.setAttribute("aria-expanded", "true");
+            btn.textContent = "Close";
+            detailsTitle.textContent = game.title;
+            detailsCategory.textContent = game.category || "Uncategorized";
+            detailsBody.innerHTML =
+              '<p class="game-detail-loading">Loading game details…</p>';
+            if (detailsPlayButton) detailsPlayButton.disabled = false;
+            detailsBackdrop.classList.remove("hidden");
+            detailsBackdrop.setAttribute("aria-hidden", "false");
+            if (detailsCloseButton) detailsCloseButton.focus();
+
+            loadGameCoverSources().then(function (assets) {
+              if (activeDetailsGame !== game) return;
+              var source =
+                assets[game.cover ? game.cover.split("/").pop() : ""];
+              var sourceLink = source && source.sourcePage;
+              var rights = source && source.rightsStatus;
+              var sourceMarkup = sourceLink
+                ? '<p class="game-detail-source">Cover source: <a href="' +
+                  esc(sourceLink) +
+                  '" target="_blank" rel="noopener noreferrer">View source</a>' +
+                  (rights ? " · Rights: " + esc(rights) : "") +
+                  "</p>"
+                : '<p class="game-detail-source">Cover source and usage rights have not been verified.</p>';
+              var art =
+                window.IbossVisualArt && window.IbossVisualArt.getGameCoverMeta
+                  ? window.IbossVisualArt.getGameCoverMeta(game)
+                  : null;
+              var coverMarkup =
+                art && art.photo
+                  ? '<img class="game-detail-drawer-cover" src="' +
+                    esc(art.photo) +
+                    '" alt="' +
+                    esc(game.title + " cover art") +
+                    '" />'
+                  : "";
+              var gameDescription = game.description
+                ? "<p>" + esc(game.description) + "</p>"
+                : '<p class="game-detail-empty">No game description is available yet.</p>';
+              var inputInfo = game.inputs
+                ? "<p><strong>Inputs:</strong> " + esc(game.inputs) + "</p>"
+                : "";
+              var playerInfo = game.playerCount
+                ? "<p><strong>Players:</strong> " +
+                  esc(game.playerCount) +
+                  "</p>"
+                : "";
+              detailsBody.innerHTML =
+                coverMarkup +
+                gameDescription +
+                inputInfo +
+                playerInfo +
+                sourceMarkup;
+            });
+          });
+        });
 
       container.querySelectorAll("[data-pip-url]").forEach(function (btn) {
         btn.addEventListener("click", function () {
@@ -1414,12 +1646,224 @@
       }
     }
 
+    var JOJO_HFTF_UPSTREAM_URL =
+      "https://www.retrogames.cc/embed/8843-jojos-bizarre-adventure%3A-heritage-for-the-future-jojo-no-kimyou-na-bouken%3A-mirai-e-no-isan-japan-990927-no-cd.html";
+
+    function renderJojoArcadePage(container) {
+      recordRecentGame(
+        "iboss://jojo",
+        "JoJo's Bizarre Adventure: Heritage for the Future"
+      );
+
+      var activeMode = "scramjet";
+      var aspect43 = true;
+
+      container.innerHTML =
+        '<div class="internal-wrap" style="max-width:1160px">' +
+        '<div class="games-header-bar" style="flex-wrap:wrap;gap:12px">' +
+        "<div>" +
+        '<div style="display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);margin-bottom:4px">' +
+        "<span>⭐ Capcom CPS-3 Arcade · Japan 990927 No-CD</span>" +
+        '<span style="opacity:.6">•</span>' +
+        '<span id="jojoPerceivedBadge">Perceived Link: Cloaked (/lesson-media/unit-8843)</span>' +
+        "</div>" +
+        '<h1 style="margin:0;font-size:22px">JoJo\'s Bizarre Adventure: Heritage for the Future</h1>' +
+        '<p style="margin:4px 0 0;opacity:.78;font-size:13px">Mounted inside a Closed Shadow stage with zero raw external iframe URLs — full <code>cross-origin-isolated</code> WASM &amp; gamepad support.</p>' +
+        "</div>" +
+        '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">' +
+        '<button type="button" class="btn btn-primary" id="jojoFullscreenBtn">⛶ Fullscreen</button>' +
+        '<button type="button" class="btn btn-secondary" id="jojoModeToggleBtn">🌐 Switch to Direct Stealth Stream</button>' +
+        '<button type="button" class="btn btn-secondary" id="jojoAspectBtn">🖥️ Stretch 16:9</button>' +
+        '<button type="button" class="btn btn-secondary" id="jojoBlankPopoutBtn">🕵️ Zero-URL Popout</button>' +
+        '<button type="button" class="btn btn-secondary" id="jojoReloadBtn">↻ Reload</button>' +
+        "</div></div>" +
+        '<div id="jojoStageOuter" style="margin-top:14px;background:#050811;border:1px solid rgba(255,255,255,0.12);border-radius:16px;padding:12px;box-shadow:0 20px 50px rgba(0,0,0,0.5);display:flex;justify-content:center;align-items:center;min-height:480px">' +
+        '<div id="jojoShadowHost" style="width:100%;max-width:760px;aspect-ratio:4/3;border-radius:10px;overflow:hidden;background:#000;position:relative"></div>' +
+        "</div>" +
+        '<details style="margin-top:14px;background:var(--bg-surface);border:1px solid rgba(255,255,255,0.09);border-radius:12px;padding:12px 16px">' +
+        '<summary style="cursor:pointer;font-weight:700;font-size:13.5px">🕹️ CPS-3 Stand Controls, Move List &amp; Offline ROM Option</summary>' +
+        '<div style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;font-size:12.5px;line-height:1.55;opacity:.9">' +
+        "<div><strong>Core Arcade Layout (6-Button / 4-Button CPS-3)</strong><br/>• Insert Coin: <code>Shift / Select</code> · Start: <code>Enter</code><br/>• Light / Medium / Heavy Attack + <strong>Stand ON/OFF</strong> button<br/>• Click inside the stage once so keyboard &amp; USB/Bluetooth controllers lock focus.</div>" +
+        "<div><strong>Signature Specials</strong><br/>• <strong>Jotaro (Star Platinum)</strong>: <code>↓↘→ + Atk</code> (Ora Ora!) · <code>→↓↘ + Atk</code> (Mach Ora) · Time Stop: <code>→ Medium, Light, →, Stand</code><br/>• <strong>DIO (The World)</strong>: <code>↓↘→ + Atk</code> (Muda Muda!) · Road Roller: <code>↓↙← + AA</code> (Stand OFF)</div>" +
+        '<div><strong>Offline Local CPS-3 ROM</strong><br/>Already have <code>jojobanr1.zip</code> or <code>jojoba.zip</code> on your device? Open <button type="button" class="btn btn-secondary" id="jojoOpenLocalEmuBtn" style="padding:2px 8px;font-size:11.5px">iboss://emulator</button> and select <strong>Arcade (FinalBurn Neo)</strong> for 100% offline play.</div>' +
+        "</div></details>" +
+        "</div>";
+
+      var hostEl = container.querySelector("#jojoShadowHost");
+      var badgeEl = container.querySelector("#jojoPerceivedBadge");
+      var modeBtn = container.querySelector("#jojoModeToggleBtn");
+      var aspectBtn = container.querySelector("#jojoAspectBtn");
+
+      // Closed Shadow DOM hides the internal viewport element from outer document.querySelectorAll('iframe') scanners
+      var shadowRoot =
+        hostEl && typeof hostEl.attachShadow === "function"
+          ? hostEl.attachShadow({ mode: "closed" })
+          : hostEl;
+
+      var innerFrame = null;
+
+      function mountPlayer(mode) {
+        activeMode = mode;
+        if (!shadowRoot) return;
+        shadowRoot.innerHTML = "";
+
+        var styleEl = document.createElement("style");
+        styleEl.textContent =
+          ":host{display:block;width:100%;height:100%;background:#000}" +
+          ".stage-surface{width:100%;height:100%;border:0;display:block;background:#000}";
+        shadowRoot.appendChild(styleEl);
+
+        innerFrame = document.createElement("iframe");
+        innerFrame.className = "stage-surface";
+        innerFrame.setAttribute("frameborder", "0");
+        innerFrame.setAttribute("scrolling", "no");
+        innerFrame.setAttribute("allowfullscreen", "true");
+        innerFrame.setAttribute("webkitallowfullscreen", "true");
+        innerFrame.setAttribute("mozallowfullscreen", "true");
+        innerFrame.setAttribute(
+          "allow",
+          "fullscreen; autoplay; clipboard-read; clipboard-write; gamepad; cross-origin-isolated"
+        );
+        shadowRoot.appendChild(innerFrame);
+
+        if (typeof hooks.mountStealthEmbed === "function") {
+          hooks.mountStealthEmbed(
+            innerFrame,
+            JOJO_HFTF_UPSTREAM_URL,
+            mode,
+            function (perceivedUrl, resolvedMode) {
+              activeMode = resolvedMode || mode;
+              if (badgeEl) {
+                var shortLink =
+                  perceivedUrl && perceivedUrl.length > 44
+                    ? perceivedUrl.slice(0, 44) + "…"
+                    : perceivedUrl || "/lesson-media/unit-8843";
+                badgeEl.textContent =
+                  "Perceived Link: " + shortLink + " · Closed Shadow";
+              }
+              if (modeBtn) {
+                modeBtn.textContent =
+                  activeMode === "stream"
+                    ? "⚡ Switch to WISP Stealth Tunnel"
+                    : "🌐 Switch to Direct Stealth Stream";
+              }
+            }
+          );
+        } else {
+          innerFrame.src = "/lesson-media/unit-8843";
+          if (badgeEl) {
+            badgeEl.textContent =
+              "Perceived Link: /lesson-media/unit-8843 · Closed Shadow";
+          }
+        }
+      }
+
+      mountPlayer("scramjet");
+
+      if (modeBtn) {
+        modeBtn.addEventListener("click", function () {
+          var nextMode = activeMode === "scramjet" ? "stream" : "scramjet";
+          mountPlayer(nextMode);
+          if (hooks.toast) {
+            hooks.toast(
+              nextMode === "stream"
+                ? "Switched to Direct Stealth Stream (/lesson-media/unit-8843)"
+                : "Switched to WISP Stealth Tunnel"
+            );
+          }
+        });
+      }
+
+      if (aspectBtn && hostEl) {
+        aspectBtn.addEventListener("click", function () {
+          aspect43 = !aspect43;
+          if (aspect43) {
+            hostEl.style.maxWidth = "760px";
+            hostEl.style.aspectRatio = "4 / 3";
+            aspectBtn.textContent = "🖥️ Stretch 16:9";
+          } else {
+            hostEl.style.maxWidth = "100%";
+            hostEl.style.aspectRatio = "16 / 9";
+            aspectBtn.textContent = "📺 4:3 Original (600×450)";
+          }
+        });
+      }
+
+      var fsBtn = container.querySelector("#jojoFullscreenBtn");
+      if (fsBtn && hostEl) {
+        fsBtn.addEventListener("click", function () {
+          var target = hostEl;
+          if (target.requestFullscreen) {
+            target.requestFullscreen().catch(function () {});
+          } else if (target.webkitRequestFullscreen) {
+            target.webkitRequestFullscreen();
+          }
+        });
+      }
+
+      var reloadBtn = container.querySelector("#jojoReloadBtn");
+      if (reloadBtn) {
+        reloadBtn.addEventListener("click", function () {
+          mountPlayer(activeMode);
+          if (hooks.toast) hooks.toast("Reloading JoJo CPS-3 stage...");
+        });
+      }
+
+      var popBtn = container.querySelector("#jojoBlankPopoutBtn");
+      if (popBtn) {
+        popBtn.addEventListener("click", function () {
+          var win = window.open("about:blank", "_blank");
+          if (!win || !win.document) {
+            if (hooks.toast) {
+              hooks.toast("Allow popups to open Zero-URL about:blank window.");
+            }
+            return;
+          }
+          var origin = window.location.origin;
+          var stealthSrc = origin + "/lesson-media/unit-8843";
+          win.document.open();
+          win.document.write(
+            '<!DOCTYPE html><html><head><meta charset="utf-8">' +
+              "<title>Unit 8 — Cultural Heritage Study</title>" +
+              "<style>html,body,#host{margin:0;padding:0;width:100%;height:100%;background:#000;overflow:hidden}</style>" +
+              '</head><body><div id="host"></div><script>' +
+              "(function(){var h=document.getElementById('host');" +
+              "var r=h.attachShadow?h.attachShadow({mode:'closed'}):h;" +
+              "var f=document.createElement('iframe');" +
+              "f.style.cssText='width:100%;height:100%;border:0;display:block;background:#000';" +
+              "f.setAttribute('allowfullscreen','true');" +
+              "f.setAttribute('allow','fullscreen; autoplay; gamepad; cross-origin-isolated');" +
+              "f.src=" +
+              JSON.stringify(stealthSrc) +
+              ";r.appendChild(f);})();" +
+              "</script></body></html>"
+          );
+          win.document.close();
+        });
+      }
+
+      var emuBtn = container.querySelector("#jojoOpenLocalEmuBtn");
+      if (emuBtn && hooks.navigate) {
+        emuBtn.addEventListener("click", function () {
+          hooks.navigate("iboss://emulator");
+        });
+      }
+    }
+
     function render(url, container) {
       var clean = String(url || "")
         .toLowerCase()
         .trim();
       if (clean === "iboss://games") {
         renderGamesHub(container);
+        return true;
+      }
+      if (
+        clean === "iboss://jojo" ||
+        clean === "iboss://hftf" ||
+        clean === "iboss://jjba"
+      ) {
+        renderJojoArcadePage(container);
         return true;
       }
       if (clean === "iboss://launchpad" || clean === "iboss://focus") {
