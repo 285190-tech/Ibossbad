@@ -24,7 +24,7 @@
     <link rel="preconnect" href="https://definitelyscience.com" crossorigin />
     <link rel="preconnect" href="https://wisp.mercurywork.shop" crossorigin />
     <link rel="preconnect" href="https://anura.pro" crossorigin />
-    <link rel="stylesheet" href="/ui/styles.css?v=8" />
+    <link rel="stylesheet" href="/ui/styles.css?v=9" />
   </head>
   <body>
     <!-- Camouflage Front Door (Pomodoro Study Timer + Calculator) -->
@@ -330,16 +330,16 @@
         <button id="dismissBroadcastBtn" type="button" class="icon-btn" aria-label="Dismiss">✕</button>
       </div>
 
-      <!-- Top Tab Bar -->
+      <!-- Top Tab Bar (Dedicated full-width tab strip + compact stealth controls) -->
       <header class="tab-strip">
-        <div id="tabsContainer" class="tabs-list" role="tablist"></div>
-        <button id="newTabBtn" type="button" class="icon-btn new-tab-btn" title="New Tab (Alt+T)" aria-label="New Tab">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-            <path d="M12 5v14M5 12h14"></path>
-          </svg>
-        </button>
-
-        <div class="tab-strip-spacer"></div>
+        <div class="tab-strip-tabs">
+          <div id="tabsContainer" class="tabs-list" role="tablist"></div>
+          <button id="newTabBtn" type="button" class="icon-btn new-tab-btn" title="New Tab (Alt+T)" aria-label="New Tab">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+              <path d="M12 5v14M5 12h14"></path>
+            </svg>
+          </button>
+        </div>
 
         <div class="top-actions">
           <button id="adminLivePill" type="button" class="pill-btn admin-crown-pill hidden" title="Open Admin Command Center (iboss://admin)">
@@ -347,44 +347,6 @@
           </button>
 
           <span id="keyTimerPill" class="pill-btn hidden" title="Temporary Access Key Remaining Time"></span>
-
-          <button id="gamesHubBtn" type="button" class="pill-btn" title="Open 200+ Games &amp; Apps Hub (iboss://games)">
-            <span>🎮 Games</span>
-          </button>
-
-          <button id="cineCloudBtn" type="button" class="pill-btn" title="Cine-Cloud OS — 106 AAA PC Cloud Games (iboss://cinecloud)">
-            <span>☁️ Cine-Cloud</span>
-          </button>
-
-          <button id="mediaHubBtn" type="button" class="pill-btn" title="Ad-Free YouTube, Streaming &amp; Radio (iboss://media)">
-            <span>🎬 Media</span>
-          </button>
-
-          <button id="desktopModeBtn" type="button" class="pill-btn" title="Multi-Window WebOS Desktop Mode (iboss://desktop)">
-            <span>🖥️ Desktop</span>
-          </button>
-
-          <button id="serverFinderPill" type="button" class="pill-btn server-finder-pill" title="Unblocked Server Finder &amp; Live WISP Handshake Ping (iboss://servers)">
-            <span class="status-dot synced" id="serverFinderDot"></span>
-            <span id="serverFinderLabel">ping: --</span>
-          </button>
-
-          <button id="transportPillBtn" type="button" class="pill-btn transport-pill" title="Proxy Engine &amp; WISP Relay Status (Click to configure)">
-            <span class="status-dot synced" id="wispDot"></span>
-            <span id="transportLabel">Scramjet · Ready</span>
-          </button>
-
-          <button id="shieldBtn" type="button" class="pill-btn shield-pill active" title="Toggle Ad &amp; Tracker Shield">
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-            </svg>
-            <span id="shieldCountLabel">0</span>
-          </button>
-
-          <button id="accountBadgeBtn" type="button" class="pill-btn" title="Cloud Sync &amp; Account">
-            <span class="status-dot" id="syncDot"></span>
-            <span id="accountBadgeLabel">Local</span>
-          </button>
 
           <button id="aboutBlankBtn" type="button" class="pill-btn stealth-pill" title="Open in untraceable about:blank tab">
             <span>about:blank</span>
@@ -514,8 +476,45 @@
         </div>
       </div>
 
-      <!-- Compact Bookmarks Strip -->
-      <div id="bookmarksBar" class="bookmarks-bar"></div>
+      <!-- Compact Bookmarks + Hub & Engine Status Dock -->
+      <div class="sub-toolbar">
+        <div id="bookmarksBar" class="bookmarks-bar"></div>
+        <div class="hub-dock-actions">
+          <button id="gamesHubBtn" type="button" class="pill-btn" title="Open 200+ Games &amp; Apps Hub (iboss://games)">
+            <span>🎮 Games</span>
+          </button>
+
+          <button id="cineCloudBtn" type="button" class="pill-btn" title="Cine-Cloud OS — 106 AAA PC Cloud Games (iboss://cinecloud)">
+            <span>☁️ Cine-Cloud</span>
+          </button>
+
+          <button id="mediaHubBtn" type="button" class="pill-btn" title="Ad-Free YouTube, Streaming &amp; Radio (iboss://media)">
+            <span>🎬 Media</span>
+          </button>
+
+          <button id="serverFinderPill" type="button" class="pill-btn server-finder-pill" title="Unblocked Server Finder &amp; Live WISP Handshake Ping (iboss://servers)">
+            <span class="status-dot synced" id="serverFinderDot"></span>
+            <span id="serverFinderLabel">ping: --</span>
+          </button>
+
+          <button id="transportPillBtn" type="button" class="pill-btn transport-pill" title="Proxy Engine &amp; WISP Relay Status (Click to configure)">
+            <span class="status-dot synced" id="wispDot"></span>
+            <span id="transportLabel">Scramjet · Ready</span>
+          </button>
+
+          <button id="shieldBtn" type="button" class="pill-btn shield-pill active" title="Toggle Ad &amp; Tracker Shield">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            </svg>
+            <span id="shieldCountLabel">0</span>
+          </button>
+
+          <button id="accountBadgeBtn" type="button" class="pill-btn" title="Cloud Sync &amp; Account">
+            <span class="status-dot" id="syncDot"></span>
+            <span id="accountBadgeLabel">Local</span>
+          </button>
+        </div>
+      </div>
 
       <!-- Persistent Background Radio Mini-Bar -->
       <div id="radioMiniBar" class="radio-mini-bar hidden">
@@ -551,7 +550,7 @@
                   <span class="pulse-dot"></span>
                   <span id="stealthStatusText">Scramjet + WISP Ready · Cloak: Default</span>
                 </div>
-                <button id="wallpaperCycleBtn" type="button" class="wallpaper-switch-pill" title="Switch New Tab &amp; Desktop Wallpaper">
+                <button id="wallpaperCycleBtn" type="button" class="wallpaper-switch-pill" title="Switch New Tab Wallpaper">
                   <span>🖼️</span>
                   <span id="wallpaperLabelText">Cosmic Nebula</span>
                 </button>
@@ -562,7 +561,7 @@
               </div>
               <h1 class="hero-title">Browse without limits.</h1>
               <p class="hero-subtitle">
-                Powered by <code>Scramjet</code> + <code>WISP</code> WASM TLS, 200+ Games, Retro EmulatorJS, WebOS Desktop &amp; <code>Ctrl+K</code> Command Palette.
+                Powered by <code>Scramjet</code> + <code>WISP</code> WASM TLS, 200+ Games, Cine-Cloud OS, Retro EmulatorJS &amp; <code>Ctrl+K</code> Command Palette.
               </p>
 
               <form id="heroSearchForm" class="hero-search">
@@ -573,7 +572,7 @@
                 <input
                   id="heroSearchInput"
                   type="text"
-                  placeholder="Search, enter any URL, or type iboss://games, iboss://extensions, iboss://admin..."
+                  placeholder="Search, enter any URL, or type iboss://games, iboss://cinecloud, iboss://servers..."
                   autocomplete="off"
                   spellcheck="false"
                 />
@@ -588,7 +587,6 @@
                 <button type="button" class="cat-pill" data-internal-jump="iboss://media">🎬 Media &amp; Radio</button>
                 <button type="button" class="cat-pill" data-internal-jump="iboss://emulator">🕹️ Retro ROMs</button>
                 <button type="button" class="cat-pill" data-internal-jump="iboss://store">🧩 1-Click Store</button>
-                <button type="button" class="cat-pill" data-internal-jump="iboss://desktop">🖥️ WebOS Desktop</button>
                 <button type="button" class="cat-pill" data-internal-jump="iboss://diagnostics">⚡ WISP Benchmark</button>
                 <button type="button" class="cat-pill" data-internal-jump="iboss://history">🗂️ Workspaces</button>
                 <button type="button" class="cat-pill" data-internal-jump="iboss://tools">🛠️ Power Tools</button>
@@ -600,7 +598,7 @@
             <div class="section-block">
               <div class="section-header">
                 <h2>Explore Hubs</h2>
-                <span class="section-caption">AAA PC cloud gaming, 200+ HTML5/Flash games, unblocked server scanner &amp; WebOS</span>
+                <span class="section-caption">AAA PC cloud gaming, 200+ HTML5/Flash games, unblocked server scanner &amp; streaming media</span>
               </div>
               <div class="bento-showcase-grid">
                 <button type="button" class="bento-feature-card bento-wide" data-internal-jump="iboss://games">
@@ -640,16 +638,6 @@
                     <span class="bento-kicker">🎬 Stream &amp; Chill</span>
                     <h3>Cinema &amp; Lofi Radio</h3>
                     <p>Ad-free YouTube frontends &amp; background synthwave/lofi beats.</p>
-                  </div>
-                </button>
-
-                <button type="button" class="bento-feature-card" data-internal-jump="iboss://desktop">
-                  <img src="/ui/assets/banner-desktop.jpg" alt="WebOS Desktop" class="bento-bg-img" loading="lazy" />
-                  <div class="bento-scrim"></div>
-                  <div class="bento-content">
-                    <span class="bento-kicker">🖥️ Multi-Window</span>
-                    <h3>WebOS Workspace</h3>
-                    <p>Draggable floating browser windows, terminal &amp; glass dock.</p>
                   </div>
                 </button>
               </div>
@@ -1045,18 +1033,18 @@
     <script defer src="/vendor/libcurl/libcurl.js"></script>
     <script defer src="/vendor/acorn/acorn.js"></script>
     <script defer src="/vendor/acorn-walk/walk.js"></script>
-    <script defer src="/ui/visual-art.js?v=8"></script>
-    <script defer src="/ui/server-finder.js?v=8"></script>
-    <script defer src="/ui/games-catalog.js?v=8"></script>
-    <script defer src="/ui/cine-cloud-catalog.js?v=8"></script>
-    <script defer src="/ui/cine-cloud.js?v=8"></script>
-    <script defer src="/ui/extensions-engine.js?v=8"></script>
-    <script defer src="/ui/media-emulator.js?v=8"></script>
-    <script defer src="/ui/diagnostics-tools.js?v=8"></script>
-    <script defer src="/ui/internal-pages.js?v=8"></script>
-    <script defer src="/ui/admin-panel.js?v=8"></script>
-    <script defer src="/ui/scramjet-engine.js?v=8"></script>
-    <script defer src="/ui/wisp-engine.js?v=8"></script>
-    <script defer src="/ui/app.js?v=8"></script>
+    <script defer src="/ui/visual-art.js?v=9"></script>
+    <script defer src="/ui/server-finder.js?v=9"></script>
+    <script defer src="/ui/games-catalog.js?v=9"></script>
+    <script defer src="/ui/cine-cloud-catalog.js?v=9"></script>
+    <script defer src="/ui/cine-cloud.js?v=9"></script>
+    <script defer src="/ui/extensions-engine.js?v=9"></script>
+    <script defer src="/ui/media-emulator.js?v=9"></script>
+    <script defer src="/ui/diagnostics-tools.js?v=9"></script>
+    <script defer src="/ui/internal-pages.js?v=9"></script>
+    <script defer src="/ui/admin-panel.js?v=9"></script>
+    <script defer src="/ui/scramjet-engine.js?v=9"></script>
+    <script defer src="/ui/wisp-engine.js?v=9"></script>
+    <script defer src="/ui/app.js?v=9"></script>
   </body>
 </html>

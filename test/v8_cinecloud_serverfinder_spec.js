@@ -502,13 +502,29 @@ test("v8.0: /mgg-games/ direct mirror, broken CNAME healing, binary WISP server 
     );
 
     // Verify root index.html includes v8.0 Cine-Cloud & Server Finder UI hooks
+    // and keeps .tab-strip unobstructed while removing WebOS Desktop
     var rootRes = await httpReq(port, "GET", "/");
     var rootHtml = rootRes.body.toString("utf8");
-    t.match(rootHtml, /cineCloudBtn/, "Includes Cine-Cloud topbar button");
+    t.match(rootHtml, /cineCloudBtn/, "Includes Cine-Cloud dock button");
     t.match(
       rootHtml,
       /serverFinderPill/,
       "Includes live Unblocked Server Finder pill"
+    );
+    t.match(
+      rootHtml,
+      /tab-strip-tabs/,
+      "Uses dedicated flex tab-strip-tabs container so action pills never cover tabs"
+    );
+    t.match(
+      rootHtml,
+      /hub-dock-actions/,
+      "Places Cine-Cloud/Games/Media pills in sub-toolbar hub-dock-actions below nav-bar"
+    );
+    t.notMatch(
+      rootHtml,
+      /desktopModeBtn|iboss:\/\/desktop/,
+      "Completely removes WebOS Desktop from browser UI"
     );
     t.match(rootHtml, /\/ui\/server-finder\.js/, "Loads server-finder.js");
     t.match(rootHtml, /\/ui\/cine-cloud\.js/, "Loads cine-cloud.js");

@@ -277,10 +277,6 @@
           bg: "linear-gradient(135deg,#f59e0b,#ef4444)",
           g: "🧩",
         },
-        "iboss://desktop": {
-          bg: "linear-gradient(135deg,#10b981,#0ea5e9)",
-          g: "🖥️",
-        },
         "iboss://diagnostics": {
           bg: "linear-gradient(135deg,#06b6d4,#3b82f6)",
           g: "⚡",
