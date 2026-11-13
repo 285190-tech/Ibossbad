@@ -53,20 +53,33 @@ body {
 .tab-strip {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 8px;
   height: 42px;
   padding: 6px 10px 0;
   background: #070a12;
   border-bottom: 1px solid var(--border-subtle);
   user-select: none;
+  overflow: hidden;
+}
+
+.tab-strip-tabs {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1 1 0%;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .tabs-list {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: calc(100% - 36px);
   overflow-x: auto;
-  max-width: calc(100vw - 320px);
   scrollbar-width: none;
 }
 
@@ -74,11 +87,16 @@ body {
   display: none;
 }
 
+.new-tab-btn {
+  flex: 0 0 auto;
+}
+
 .browser-tab {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 130px;
+  flex: 0 1 195px;
+  min-width: 84px;
   max-width: 215px;
   height: 34px;
   padding: 0 10px 0 12px;
@@ -146,15 +164,14 @@ body {
   color: var(--text-primary);
 }
 
-.tab-strip-spacer {
-  flex: 1;
-}
-
 .top-actions {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex: 0 0 auto;
   padding-bottom: 5px;
+  padding-left: 8px;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .pill-btn {
@@ -1014,24 +1031,53 @@ body {
   color: #6ee7b7;
 }
 
+.sub-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 10px;
+  background: rgba(11, 16, 29, 0.88);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  min-height: 35px;
+  overflow: hidden;
+}
+
 .bookmarks-bar {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
-  background: var(--bg-surface);
-  border-bottom: 1px solid var(--border-subtle);
+  flex: 1 1 0%;
+  min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
-  min-height: 30px;
+  min-height: 25px;
 }
 
-.bookmarks-bar::-webkit-scrollbar {
+.bookmarks-bar::-webkit-scrollbar,
+.hub-dock-actions::-webkit-scrollbar {
   display: none;
 }
 
-.bookmarks-bar:empty {
-  display: none;
+.hub-dock-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 68%;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-left: 10px;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.hub-dock-actions .pill-btn {
+  height: 25px;
+  padding: 0 9px;
+  font-size: 11px;
+  flex: 0 0 auto;
 }
 
 .bm-chip {
@@ -2566,8 +2612,7 @@ body {
   border-radius: 11px;
 }
 .bookmarks-bar {
-  background: rgba(11, 16, 29, 0.86);
-  backdrop-filter: blur(14px);
+  background: transparent;
 }
 .bm-chip {
   gap: 6px;

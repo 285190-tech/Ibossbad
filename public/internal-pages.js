@@ -114,12 +114,6 @@
             "Install Zinc-compatible .zip extensions, FPS HUD & custom CSS/JS.",
         },
         {
-          url: "iboss://desktop",
-          title: "WebOS Multi-Window Desktop",
-          desc:
-            "Terbium/Anura-style floating multi-window desktop, dock & terminal.",
-        },
-        {
           url: "iboss://downloads",
           title: "Safe-Filename Proxy Downloader",
           desc: "Download files through the proxy with clean custom filenames.",
@@ -950,8 +944,8 @@
         hooks.mediaEmulator.renderDownloaderPage(container);
         return true;
       }
-      if (clean === "iboss://desktop" && hooks.mediaEmulator) {
-        hooks.mediaEmulator.renderDesktopMode(container);
+      if (clean === "iboss://desktop") {
+        if (hooks.navigate) hooks.navigate("iboss://newtab");
         return true;
       }
       if (clean === "iboss://diagnostics" && hooks.diagnosticsTools) {

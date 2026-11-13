@@ -2830,11 +2830,6 @@
       tag: "Page",
     },
     {
-      url: "iboss://desktop",
-      title: "WebOS Multi-Window Desktop",
-      tag: "Page",
-    },
-    {
       url: "iboss://diagnostics",
       title: "WISP Relay Latency Benchmark",
       tag: "Page",
@@ -3787,14 +3782,6 @@
       mediaHubBtn.addEventListener("click", () => {
         const tab = getActiveTab() || createTab("", true);
         navigateTab(tab, "iboss://media", true);
-      });
-    }
-
-    const desktopModeBtn = document.getElementById("desktopModeBtn");
-    if (desktopModeBtn) {
-      desktopModeBtn.addEventListener("click", () => {
-        const tab = getActiveTab() || createTab("", true);
-        navigateTab(tab, "iboss://desktop", true);
       });
     }
 
