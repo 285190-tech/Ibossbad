@@ -1423,8 +1423,12 @@
           activeTab && t.id === activeTab.id && t.url && !internal
         );
         const isSecondary = Boolean(secondaryTabId && t.id === secondaryTabId);
+        const isVisible = isPrimary || isSecondary;
         t.iframe.classList.toggle("active", isPrimary);
-        t.iframe.classList.toggle("split-visible", isPrimary || isSecondary);
+        t.iframe.classList.toggle("split-visible", isVisible);
+        if (scramjetEngine && scramjetEngine.setTabBackgroundThrottled) {
+          scramjetEngine.setTabBackgroundThrottled(t.id, !isVisible);
+        }
       }
     });
 
@@ -1609,7 +1613,64 @@
     out.scrollTop = out.scrollHeight;
   }
 
-  // --- Quick Links & Bookmarks ---
+  // --- Quick Links, Bookmarks & Debounced Hover Pre-Warmer ---
+  let hoverPrewarmTimer = null;
+  let hoverPrewarmEl = null;
+
+  document.addEventListener(
+    "pointerover",
+    (ev) => {
+      if (
+        !state.authenticated ||
+        state.settings.proxyEngine !== "scramjet" ||
+        !scramjetEngine ||
+        typeof scramjetEngine.prewarmOrigin !== "function"
+      ) {
+        return;
+      }
+      const target =
+        ev.target && ev.target.closest
+          ? ev.target.closest(
+              "[data-prewarm-url], [data-play-url], [data-media-open]"
+            )
+          : null;
+      if (!target || target === hoverPrewarmEl) return;
+      const rawUrl =
+        target.getAttribute("data-prewarm-url") ||
+        target.getAttribute("data-play-url") ||
+        target.getAttribute("data-media-open");
+      if (!rawUrl || !/^https?:\/\//i.test(rawUrl)) return;
+
+      if (hoverPrewarmTimer) {
+        clearTimeout(hoverPrewarmTimer);
+        hoverPrewarmTimer = null;
+      }
+      hoverPrewarmEl = target;
+      hoverPrewarmTimer = setTimeout(() => {
+        hoverPrewarmTimer = null;
+        scramjetEngine.prewarmOrigin(rawUrl).catch(() => {});
+      }, 130);
+    },
+    { passive: true }
+  );
+
+  document.addEventListener(
+    "pointerout",
+    (ev) => {
+      if (!hoverPrewarmEl) return;
+      const rel = ev.relatedTarget;
+      if (rel && hoverPrewarmEl.contains && hoverPrewarmEl.contains(rel)) {
+        return;
+      }
+      if (hoverPrewarmTimer) {
+        clearTimeout(hoverPrewarmTimer);
+        hoverPrewarmTimer = null;
+      }
+      hoverPrewarmEl = null;
+    },
+    { passive: true }
+  );
+
   function renderQuickLinks() {
     const grid = document.getElementById("quickLinksGrid");
     grid.innerHTML = "";
@@ -1618,6 +1679,7 @@
       const card = document.createElement("button");
       card.type = "button";
       card.className = "site-card";
+      card.setAttribute("data-prewarm-url", item.url);
       card.addEventListener("click", () => {
         const tab = getActiveTab() || createTab("", true);
         navigateTab(tab, item.url, true);
@@ -1657,6 +1719,7 @@
       chip.type = "button";
       chip.className = "bm-chip";
       chip.title = bm.url;
+      chip.setAttribute("data-prewarm-url", bm.url);
       chip.addEventListener("click", () => {
         const tab = getActiveTab() || createTab("", true);
         navigateTab(tab, bm.url, true);
@@ -1689,6 +1752,7 @@
     state.bookmarks.forEach((bm, idx) => {
       const card = document.createElement("div");
       card.className = "site-card";
+      card.setAttribute("data-prewarm-url", bm.url);
       card.addEventListener("click", () => {
         const tab = getActiveTab() || createTab("", true);
         navigateTab(tab, bm.url, true);
@@ -3050,6 +3114,21 @@
     if (window.IbossDiagnosticsTools) {
       diagnosticsTools = window.IbossDiagnosticsTools.create({
         getSettings: () => state.settings,
+        getSwCacheStats: () =>
+          scramjetEngine && scramjetEngine.getCacheStats
+            ? scramjetEngine.getCacheStats()
+            : Promise.resolve(null),
+        clearSwCache: () =>
+          scramjetEngine && scramjetEngine.clearAssetCache
+            ? scramjetEngine.clearAssetCache()
+            : Promise.resolve(null),
+        getServerDnsStats: () => {
+          const d = state.serverSpeed && state.serverSpeed.dnsCache;
+          if (!d) return "Active (8192-slot TTL)";
+          return (
+            d.hits + " hits · " + d.deduped + " deduped (" + d.size + " cached)"
+          );
+        },
         applyWispPreset: (presetVal) => {
           state.settings.wispPreset = presetVal;
           saveJson(STORAGE_KEYS.SETTINGS, state.settings);
@@ -3217,7 +3296,10 @@
         }
       }
 
-      const res = await fetch("/api/status");
+      const [res] = await Promise.all([
+        fetch("/api/status"),
+        reloadCustomGames(),
+      ]);
       const status = await res.json();
       state.authenticated = Boolean(status.authenticated);
       state.authRequired = Boolean(status.authRequired);
@@ -3231,6 +3313,14 @@
       state.prefix = status.prefix || "/proxy/";
       state.user = status.user || null;
       state.supabase = status.supabase || { enabled: false };
+      state.serverSpeed = status.speed || null;
+      if (
+        scramjetEngine &&
+        status.speed &&
+        typeof scramjetEngine.setServerSpeedHints === "function"
+      ) {
+        scramjetEngine.setServerSpeedHints(status.speed);
+      }
 
       const savedSupa = getStoredSupabaseTokens();
       if (
@@ -3251,7 +3341,6 @@
         }
       }
 
-      await reloadCustomGames();
       refreshGateVisibility();
 
       if (state.authenticated) {

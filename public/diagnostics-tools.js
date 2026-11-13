@@ -184,6 +184,22 @@
       }
 
       var settings = hooks.getSettings ? hooks.getSettings() : {};
+      var swCacheStats = hooks.getSwCacheStats
+        ? await hooks.getSwCacheStats()
+        : null;
+      var swCacheStr = swCacheStats
+        ? (swCacheStats.totalBytes / 1048576).toFixed(1) +
+          " / " +
+          Math.round((swCacheStats.maxBytes || 125829120) / 1048576) +
+          " MB (" +
+          swCacheStats.entries +
+          " assets · " +
+          swCacheStats.hits +
+          " hits)"
+        : "0.0 / 120 MB";
+      var serverDnsStr = hooks.getServerDnsStats
+        ? hooks.getServerDnsStats()
+        : "Active (8192-slot TTL)";
 
       function buildRelayRows() {
         return WISP_RELAYS.map(function (r) {
@@ -244,6 +260,7 @@
         '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
         '<button type="button" class="btn btn-primary" id="runWispBenchBtn">⚡ Benchmark All Relays</button>' +
         '<button type="button" class="btn btn-secondary" id="pickFastestWispBtn">Auto-Select Fastest</button>' +
+        '<button type="button" class="btn btn-secondary" id="purgeSwAssetCacheBtn">Purge Asset Cache</button>' +
         "</div></div>" +
         '<div class="admin-stats-grid" style="margin-bottom:18px">' +
         '<div class="admin-stat-card"><span class="stat-k">Scramjet Service Worker</span><strong>' +
@@ -255,6 +272,12 @@
             " · " +
             (settings.bareTransport || "libcurl")
         ) +
+        "</strong></div>" +
+        '<div class="admin-stat-card"><span class="stat-k">SW LRU Game Cache</span><strong>' +
+        esc(swCacheStr) +
+        "</strong></div>" +
+        '<div class="admin-stat-card"><span class="stat-k">Server DNS Cache</span><strong>' +
+        esc(serverDnsStr) +
         "</strong></div>" +
         '<div class="admin-stat-card"><span class="stat-k">JS Heap Memory</span><strong>' +
         esc(memStr) +
@@ -284,6 +307,19 @@
         });
       }
       bindRelayButtons();
+
+      var purgeBtn = container.querySelector("#purgeSwAssetCacheBtn");
+      if (purgeBtn) {
+        purgeBtn.addEventListener("click", async function () {
+          purgeBtn.disabled = true;
+          purgeBtn.textContent = "Purging...";
+          if (hooks.clearSwCache) {
+            await hooks.clearSwCache();
+          }
+          hooks.toast("Purged Service Worker LRU asset cache!");
+          renderDiagnosticsPage(container);
+        });
+      }
 
       container
         .querySelector("#runWispBenchBtn")

@@ -1,6 +1,11 @@
 "use strict";
 
 (function (window) {
+  var FAST_RELAY_SESSION_KEY = "ibossbad.fastRelay.v1";
+  var FAST_RELAY_TTL_MS = 10 * 60 * 1000; // 10 minutes
+  var PREWARM_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes per origin
+  var SW_KEEPALIVE_INTERVAL_MS = 25000; // 25s (< Chrome's 30s idle SW kill timer)
+
   var DEFAULT_PUBLIC_RELAYS = [
     { url: "wss://definitelyscience.com/wisp/", label: "DefinitelyScience" },
     { url: "wss://pgis-wisp.joytree.site/", label: "PGIS" },
@@ -18,6 +23,45 @@
     return proto + window.location.host + "/wisp/";
   }
 
+  function loadCachedRelay() {
+    try {
+      var raw = window.sessionStorage.getItem(FAST_RELAY_SESSION_KEY);
+      if (!raw) return null;
+      var parsed = JSON.parse(raw);
+      if (
+        !parsed ||
+        !parsed.url ||
+        typeof parsed.ts !== "number" ||
+        Date.now() - parsed.ts > FAST_RELAY_TTL_MS
+      ) {
+        return null;
+      }
+      return parsed;
+    } catch (_e) {
+      return null;
+    }
+  }
+
+  function saveCachedRelay(url, label, latency) {
+    try {
+      window.sessionStorage.setItem(
+        FAST_RELAY_SESSION_KEY,
+        JSON.stringify({
+          url: url,
+          label: label,
+          latency: latency || null,
+          ts: Date.now(),
+        })
+      );
+    } catch (_e) {}
+  }
+
+  function clearCachedRelay() {
+    try {
+      window.sessionStorage.removeItem(FAST_RELAY_SESSION_KEY);
+    } catch (_e) {}
+  }
+
   function probeWsLatency(wsUrl, timeoutMs) {
     return new Promise(function (resolve) {
       var t0 = performance.now();
@@ -30,7 +74,7 @@
           if (ws) ws.close();
         } catch (_e) {}
         resolve(null);
-      }, timeoutMs || 3200);
+      }, timeoutMs || 2800);
 
       try {
         ws = new window.WebSocket(wsUrl);
@@ -70,7 +114,7 @@
         return;
       }
       candidates.forEach(function (cand) {
-        probeWsLatency(cand.url, 3500).then(function (ms) {
+        probeWsLatency(cand.url, 3200).then(function (ms) {
           remaining--;
           if (!settled && ms !== null) {
             settled = true;
@@ -98,13 +142,34 @@
     var bareTransportName = "libcurl"; // "libcurl" or "epoxy"
     var shieldEnabled = true;
     var blockedCount = 0;
-    var selfTunnelVerified = null; // null = untested, true = working, false = blocked
+    var selfTunnelVerified = null; // null = unknown, true = internet ok, false = restricted
+    var libcurlVersionHash = "6";
+    var epoxyVersionHash = "6";
     var tabFrames = new Map(); // tabId -> ScramjetFrame
+    var tabThrottledMap = new Map(); // tabId -> boolean
+    var prewarmedOrigins = new Map(); // origin -> timestamp
+    var prewarmInFlight = false;
+    var keepAliveTimer = null;
+    var cacheStatsResolvers = [];
 
     var swChannel =
       typeof BroadcastChannel !== "undefined"
         ? new BroadcastChannel("ibossbad-sw-channel")
         : null;
+
+    function forwardRequestEntry(d) {
+      if (!d || typeof cb.onRequestLog !== "function") return;
+      cb.onRequestLog({
+        method: d.method || "GET",
+        url: d.url,
+        status: d.status || 200,
+        bytes: d.bytes || 0,
+        ms: d.ms || 1,
+        relay: d.cached
+          ? "SW Cache · Instant"
+          : "Scramjet · " + activeWispLabel,
+      });
+    }
 
     if (swChannel) {
       swChannel.addEventListener("message", function (ev) {
@@ -113,20 +178,58 @@
         if (d.type === "blocked") {
           blockedCount++;
           emitStatus();
-        } else if (
-          d.type === "request" &&
-          typeof cb.onRequestLog === "function"
-        ) {
-          cb.onRequestLog({
-            method: d.method || "GET",
-            url: d.url,
-            status: d.status || 200,
-            bytes: d.bytes || 0,
-            ms: d.ms || 1,
-            relay: "Scramjet · " + activeWispLabel,
-          });
+        } else if (d.type === "request") {
+          forwardRequestEntry(d);
+        } else if (d.type === "request-batch" && Array.isArray(d.entries)) {
+          for (var i = 0; i < d.entries.length; i++) {
+            forwardRequestEntry(d.entries[i]);
+          }
+        } else if (d.type === "cache-stats-result" && d.stats) {
+          var pending = cacheStatsResolvers.splice(
+            0,
+            cacheStatsResolvers.length
+          );
+          for (var j = 0; j < pending.length; j++) {
+            pending[j](d.stats);
+          }
         }
       });
+    }
+
+    function sendSwKeepAlivePing() {
+      if (
+        typeof document !== "undefined" &&
+        document.visibilityState &&
+        document.visibilityState !== "visible"
+      ) {
+        return;
+      }
+      if (swChannel) {
+        try {
+          swChannel.postMessage({ type: "ping" });
+          return;
+        } catch (_e) {}
+      }
+      if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+        try {
+          navigator.serviceWorker.controller.postMessage({ type: "ping" });
+        } catch (_e2) {}
+      }
+    }
+
+    function ensureSwKeepAliveStarted() {
+      if (keepAliveTimer) return;
+      keepAliveTimer = setInterval(
+        sendSwKeepAlivePing,
+        SW_KEEPALIVE_INTERVAL_MS
+      );
+      if (typeof document !== "undefined") {
+        document.addEventListener("visibilitychange", function () {
+          if (document.visibilityState === "visible") {
+            sendSwKeepAlivePing();
+          }
+        });
+      }
     }
 
     function emitStatus() {
@@ -165,7 +268,7 @@
 
       if (!navigator.serviceWorker.controller) {
         await new Promise(function (resolve) {
-          var timer = setTimeout(resolve, 2500);
+          var timer = setTimeout(resolve, 2000);
           navigator.serviceWorker.addEventListener(
             "controllerchange",
             function () {
@@ -180,6 +283,7 @@
       if (swChannel) {
         swChannel.postMessage({ type: "shield", enabled: shieldEnabled });
       }
+      ensureSwKeepAliveStarted();
     }
 
     async function ensureInitialized() {
@@ -205,8 +309,6 @@
           },
         });
 
-        await controller.init();
-
         // Intercept proxied file downloads cleanly
         controller.addEventListener("download", function (ev) {
           try {
@@ -230,7 +332,9 @@
           } catch (_e) {}
         });
 
-        await registerAndClaimServiceWorker();
+        // Boot Scramjet IndexedDB controller & Service Worker registration in parallel
+        await Promise.all([controller.init(), registerAndClaimServiceWorker()]);
+
         bareConnection = new BareMux.BareMuxConnection("/baremux/worker.js");
         bareClient = new BareMux.BareClient();
       })().catch(function (err) {
@@ -243,17 +347,20 @@
     async function setBareMuxWisp(wispUrl, label, latency) {
       var modPath =
         bareTransportName === "epoxy"
-          ? "/epoxy/index.mjs?v=2"
-          : "/libcurl/index.mjs?v=2";
+          ? "/epoxy/index.mjs?v=" + encodeURIComponent(epoxyVersionHash)
+          : "/libcurl/index.mjs?v=" + encodeURIComponent(libcurlVersionHash);
+      // [maxTotalSockets, maxPerHost, cachedWarmTlsSessions]
+      // 6 per host leans on HTTP/2 multiplexing while keeping 32 warm TLS 1.3 sessions cached
       var modOpts =
         bareTransportName === "epoxy"
           ? [{ wisp: wispUrl }]
-          : [{ websocket: wispUrl, connections: [60, 50, 12] }];
+          : [{ websocket: wispUrl, connections: [64, 6, 32] }];
 
       await bareConnection.setTransport(modPath, modOpts);
       activeWispUrl = wispUrl;
       activeWispLabel = label || wispUrl;
       activeWispLatency = latency || null;
+      saveCachedRelay(wispUrl, activeWispLabel, activeWispLatency);
       emitStatus();
     }
 
@@ -266,7 +373,7 @@
         var timeoutPromise = new Promise(function (_, reject) {
           setTimeout(function () {
             reject(new Error("WISP tunnel probe timeout"));
-          }, 4000);
+          }, 2600);
         });
         var res = await Promise.race([probePromise, timeoutPromise]);
         return Boolean(res && res.status > 0);
@@ -276,35 +383,86 @@
     }
 
     async function ensureTransportReady() {
-      await ensureInitialized();
-      if (activeWispUrl) return;
+      if (activeWispUrl && initPromise) {
+        await initPromise;
+        return;
+      }
       if (transportReadyPromise) return transportReadyPromise;
 
       transportReadyPromise = (async function () {
         if (customWispUrl) {
-          var customMs = await probeWsLatency(customWispUrl, 3200);
-          await setBareMuxWisp(customWispUrl, "Custom WISP", customMs);
+          var customBoot = await Promise.all([
+            ensureInitialized(),
+            probeWsLatency(customWispUrl, 2500),
+          ]);
+          await setBareMuxWisp(customWispUrl, "Custom WISP", customBoot[1]);
+          return;
+        }
+
+        // Instant zero-probe path if this browser session already verified a fast relay
+        var cachedRelay = loadCachedRelay();
+        if (cachedRelay && cachedRelay.url) {
+          await ensureInitialized();
+          await setBareMuxWisp(
+            cachedRelay.url,
+            cachedRelay.label,
+            cachedRelay.latency
+          );
+          // Refresh RTT quietly in background; failover seamlessly if dead
+          probeWsLatency(cachedRelay.url, 2500).then(function (liveMs) {
+            if (liveMs === null && activeWispUrl === cachedRelay.url) {
+              clearCachedRelay();
+              activeWispUrl = null;
+              ensureTransportReady().catch(function () {});
+            } else if (liveMs !== null && activeWispUrl === cachedRelay.url) {
+              activeWispLatency = liveMs;
+              emitStatus();
+            }
+          });
           return;
         }
 
         var selfUrl = getSelfWispUrl();
+
+        // If backend reported outbound internet is available (or pool failover disabled),
+        // probe local /wisp/ in parallel with engine init and bind immediately with ZERO extra round-trip
         if (selfTunnelVerified !== false) {
-          var selfMs = await probeWsLatency(selfUrl, 2000);
+          var parallelSelf = await Promise.all([
+            ensureInitialized(),
+            probeWsLatency(selfUrl, 1600),
+          ]);
+          var selfMs = parallelSelf[1];
           if (selfMs !== null) {
             await setBareMuxWisp(selfUrl, "Self-Hosted (/wisp/)", selfMs);
             if (!allowPoolFailover || selfTunnelVerified === true) {
               selfTunnelVerified = true;
               return;
             }
-            var canReachOut = await verifyCurrentTunnelCanReachInternet();
-            if (canReachOut) {
-              selfTunnelVerified = true;
-              return;
-            }
-            selfTunnelVerified = false;
-          } else {
-            selfTunnelVerified = false;
+            // Verify asynchronously in background so navigation starts with 0ms stall
+            verifyCurrentTunnelCanReachInternet().then(function (ok) {
+              if (ok) {
+                selfTunnelVerified = true;
+              } else {
+                selfTunnelVerified = false;
+                clearCachedRelay();
+                if (allowPoolFailover && activeWispUrl === selfUrl) {
+                  selectFastestPoolRelay(selfUrl).then(function (bestBg) {
+                    if (bestBg) {
+                      setBareMuxWisp(
+                        bestBg.url,
+                        "Pool · " + bestBg.label,
+                        bestBg.latency
+                      ).catch(function () {});
+                    }
+                  });
+                }
+              }
+            });
+            return;
           }
+          selfTunnelVerified = false;
+        } else {
+          await ensureInitialized();
         }
 
         if (allowPoolFailover) {
@@ -325,6 +483,60 @@
       });
 
       return transportReadyPromise;
+    }
+
+    function installBackgroundFrameThrottle(tabId, win) {
+      if (!win || win.__ibossRafThrottleInstalled) return;
+      win.__ibossRafThrottleInstalled = true;
+      var origRaf =
+        typeof win.requestAnimationFrame === "function"
+          ? win.requestAnimationFrame.bind(win)
+          : null;
+      var origCaf =
+        typeof win.cancelAnimationFrame === "function"
+          ? win.cancelAnimationFrame.bind(win)
+          : null;
+      var origSetTimeout =
+        typeof win.setTimeout === "function"
+          ? win.setTimeout.bind(win)
+          : setTimeout;
+      var origClearTimeout =
+        typeof win.clearTimeout === "function"
+          ? win.clearTimeout.bind(win)
+          : clearTimeout;
+      if (!origRaf) return;
+
+      var throttledIds = new Map();
+      var nextSyntheticId = 9000000;
+
+      win.requestAnimationFrame = function (callback) {
+        if (!tabThrottledMap.get(tabId)) {
+          return origRaf(callback);
+        }
+        // Throttle hidden background games from 60fps -> 1fps to save Chromebook CPU/GPU
+        var sid = ++nextSyntheticId;
+        var handle = origSetTimeout(function () {
+          throttledIds.delete(sid);
+          try {
+            var ts =
+              win.performance && typeof win.performance.now === "function"
+                ? win.performance.now()
+                : Date.now();
+            callback(ts);
+          } catch (_e) {}
+        }, 1000);
+        throttledIds.set(sid, handle);
+        return sid;
+      };
+
+      win.cancelAnimationFrame = function (id) {
+        if (throttledIds.has(id)) {
+          origClearTimeout(throttledIds.get(id));
+          throttledIds.delete(id);
+          return;
+        }
+        if (origCaf) origCaf(id);
+      };
     }
 
     function ensureFrameForTab(tabId, iframeEl) {
@@ -356,6 +568,8 @@
       sjFrame.addEventListener("contextInit", function (ev) {
         var win = ev && ev.window;
         if (!win) return;
+
+        installBackgroundFrameThrottle(tabId, win);
 
         // WebRTC privacy shield inside Scramjet frame
         if (shieldEnabled) {
@@ -422,15 +636,123 @@
       return sjFrame;
     }
 
+    async function prewarmOrigin(targetUrl) {
+      if (!targetUrl || prewarmInFlight) return false;
+      var origin;
+      try {
+        var parsed = new URL(targetUrl);
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          return false;
+        }
+        origin = parsed.origin;
+      } catch (_e) {
+        return false;
+      }
+
+      var now = Date.now();
+      var lastWarm = prewarmedOrigins.get(origin) || 0;
+      if (now - lastWarm < PREWARM_COOLDOWN_MS) {
+        return false;
+      }
+      if (prewarmedOrigins.size >= 128) {
+        var firstKey = prewarmedOrigins.keys().next().value;
+        if (firstKey) prewarmedOrigins.delete(firstKey);
+      }
+      prewarmedOrigins.set(origin, now);
+
+      prewarmInFlight = true;
+      try {
+        await ensureTransportReady();
+        if (!bareClient) return false;
+        await Promise.race([
+          bareClient.fetch(origin + "/favicon.ico", { method: "HEAD" }),
+          new Promise(function (resolve) {
+            setTimeout(resolve, 2200);
+          }),
+        ]);
+        return true;
+      } catch (_err) {
+        return false;
+      } finally {
+        prewarmInFlight = false;
+      }
+    }
+
+    function getCacheStats() {
+      return new Promise(function (resolve) {
+        if (!swChannel) {
+          resolve(null);
+          return;
+        }
+        var done = false;
+        var timer = setTimeout(function () {
+          if (done) return;
+          done = true;
+          resolve(null);
+        }, 1500);
+        cacheStatsResolvers.push(function (stats) {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          resolve(stats);
+        });
+        swChannel.postMessage({ type: "cache-stats" });
+      });
+    }
+
+    function clearAssetCache() {
+      return new Promise(function (resolve) {
+        if (!swChannel) {
+          resolve(null);
+          return;
+        }
+        var done = false;
+        var timer = setTimeout(function () {
+          if (done) return;
+          done = true;
+          resolve(null);
+        }, 2000);
+        cacheStatsResolvers.push(function (stats) {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          resolve(stats);
+        });
+        swChannel.postMessage({ type: "cache-clear" });
+      });
+    }
+
     return {
       isSupported: isSupported,
       ensureReady: ensureTransportReady,
       navigateTabFrame: navigateTabFrame,
+      prewarmOrigin: prewarmOrigin,
+      getCacheStats: getCacheStats,
+      clearAssetCache: clearAssetCache,
+      setServerSpeedHints: function (hints) {
+        if (!hints || typeof hints !== "object") return;
+        if (hints.libcurlHash) libcurlVersionHash = String(hints.libcurlHash);
+        if (hints.epoxyHash) epoxyVersionHash = String(hints.epoxyHash);
+        if (typeof hints.wispInternetReady === "boolean") {
+          selfTunnelVerified = hints.wispInternetReady;
+          if (hints.wispInternetReady === false) {
+            var cached = loadCachedRelay();
+            if (cached && cached.url === getSelfWispUrl()) {
+              clearCachedRelay();
+            }
+          }
+        }
+      },
+      setTabBackgroundThrottled: function (tabId, throttled) {
+        if (!tabId) return;
+        tabThrottledMap.set(tabId, Boolean(throttled));
+      },
       getTabFrame: function (tabId) {
         return tabFrames.get(tabId) || null;
       },
       destroyTabFrame: function (tabId) {
         tabFrames.delete(tabId);
+        tabThrottledMap.delete(tabId);
       },
       encodeUrl: function (targetUrl) {
         if (!controller) {
@@ -446,11 +768,13 @@
           cfg.customWispUrl !== customWispUrl
         ) {
           customWispUrl = (cfg.customWispUrl || "").trim();
+          clearCachedRelay();
           needRebind = true;
         }
         if (cfg.allowPoolFailover !== undefined) {
           if (Boolean(cfg.allowPoolFailover) !== allowPoolFailover) {
             allowPoolFailover = Boolean(cfg.allowPoolFailover);
+            clearCachedRelay();
             needRebind = true;
           }
         }
@@ -466,19 +790,20 @@
         }
         if (needRebind && bareConnection) {
           activeWispUrl = null;
-          selfTunnelVerified = null;
           ensureTransportReady().catch(function () {});
         } else {
           emitStatus();
         }
       },
       reconnect: async function () {
+        clearCachedRelay();
         activeWispUrl = null;
         selfTunnelVerified = null;
         await ensureTransportReady();
       },
       failoverRelay: async function () {
         if (!allowPoolFailover || !bareConnection) return null;
+        clearCachedRelay();
         var next = await selectFastestPoolRelay(activeWispUrl);
         if (next) {
           await setBareMuxWisp(next.url, "Pool · " + next.label, next.latency);

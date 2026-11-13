@@ -12,12 +12,15 @@
     { url: "wss://wisp.rhw.one/", label: "RHW" },
   ];
 
-  var AD_BLOCK_DOMAINS = [
+  var AD_BLOCK_SET = new Set([
     "doubleclick.net",
     "googlesyndication.com",
     "googleadservices.com",
     "google-analytics.com",
     "googletagmanager.com",
+    "googletagservices.com",
+    "adservice.google.com",
+    "2mdn.net",
     "adnxs.com",
     "adsrvr.org",
     "criteo.com",
@@ -34,8 +37,73 @@
     "adform.net",
     "smartadserver.com",
     "popads.net",
+    "popcash.net",
     "propellerads.com",
-  ];
+    "adsterra.com",
+    "exoclick.com",
+    "amazon-adsystem.com",
+    "media.net",
+    "yieldmo.com",
+    "gumgum.com",
+    "kargo.com",
+    "spotx.tv",
+    "adsafeprotected.com",
+    "doubleverify.com",
+    "demdex.net",
+    "omtrdc.net",
+    "krxd.net",
+    "bluekai.com",
+    "rlcdn.com",
+    "tapad.com",
+    "mathtag.com",
+    "adthrive.com",
+    "mediavine.com",
+    "ezoic.net",
+    "freestar.io",
+    "playwire.com",
+    "nitropay.com",
+    "adinplay.com",
+    "poki-analytics.com",
+    "gameanalytics.com",
+    "unityads.unity3d.com",
+    "applovin.com",
+    "vungle.com",
+    "chartboost.com",
+    "ironsrc.com",
+    "inmobi.com",
+    "adcolony.com",
+    "tapjoy.com",
+    "adjust.com",
+    "appsflyer.com",
+    "hotjar.com",
+    "mouseflow.com",
+    "fullstory.com",
+    "clarity.ms",
+    "logrocket.io",
+    "mixpanel.com",
+    "amplitude.com",
+    "segment.io",
+    "posthog.com",
+    "newrelic.com",
+    "nr-data.net",
+    "bugsnag.com",
+    "sentry-cdn.com",
+    "ingest.sentry.io",
+    "onesignal.com",
+    "hubspot.com",
+    "hs-analytics.net",
+    "connect.facebook.net",
+    "analytics.tiktok.com",
+    "ads-twitter.com",
+    "bat.bing.com",
+    "mc.yandex.ru",
+    "onetrust.com",
+    "cookielaw.org",
+    "chartbeat.com",
+    "adroll.com",
+    "rtbhouse.com",
+    "monetag.com",
+  ]);
 
   function getSelfWispUrl() {
     var proto = window.location.protocol === "https:" ? "wss://" : "ws://";
@@ -61,11 +129,12 @@
     if (!adblockEnabled || !urlStr) return false;
     try {
       var h = new URL(urlStr).hostname.toLowerCase();
-      for (var i = 0; i < AD_BLOCK_DOMAINS.length; i++) {
-        var d = AD_BLOCK_DOMAINS[i];
-        if (h === d || h.endsWith("." + d)) {
-          return true;
-        }
+      if (!h) return false;
+      if (AD_BLOCK_SET.has(h)) return true;
+      var dot = h.indexOf(".");
+      while (dot !== -1) {
+        if (AD_BLOCK_SET.has(h.slice(dot + 1))) return true;
+        dot = h.indexOf(".", dot + 1);
       }
     } catch (_e) {
       return false;

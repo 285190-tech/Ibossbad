@@ -404,6 +404,7 @@
         }).join("") +
         "</select>" +
         '<button type="button" class="btn btn-primary" id="emuLaunchBtn">Boot ROM</button>' +
+        '<button type="button" class="btn btn-secondary" id="emuTurboIsolatedBtn" title="Open in isolated COOP/COEP window with SharedArrayBuffer multi-threading">⚡ Turbo Multi-Thread</button>' +
         "</div></div>" +
         '<div id="emuStageBox" class="emu-stage-box">' +
         '<div class="empty-bookmarks">Select a ROM file above and click <strong>Boot ROM</strong> to start playing.</div>' +
@@ -472,6 +473,59 @@
             "Booting " + cleanTitle + " (" + core.toUpperCase() + ")"
           );
         });
+
+      var turboBtn = container.querySelector("#emuTurboIsolatedBtn");
+      if (turboBtn) {
+        turboBtn.addEventListener("click", async function () {
+          var fileInput = container.querySelector("#emuRomInput");
+          var file = fileInput.files && fileInput.files[0];
+          if (!file) {
+            hooks.toast("Choose a ROM file from your device first.");
+            return;
+          }
+          var selectedCore = container.querySelector("#emuCoreSelect").value;
+          var core =
+            selectedCore === "auto"
+              ? detectCoreFromFilename(file.name)
+              : selectedCore;
+          var cleanTitle = file.name.replace(/\.[^.]+$/, "");
+          var buf = await file.arrayBuffer();
+
+          if (typeof BroadcastChannel !== "undefined") {
+            var bc = new BroadcastChannel("ibossbad-emu-channel");
+            var sent = false;
+            var sendPayload = function () {
+              if (sent) return;
+              sent = true;
+              bc.postMessage({
+                type: "iboss-emu-boot",
+                romBuffer: buf,
+                core: core,
+                title: cleanTitle,
+              });
+              setTimeout(function () {
+                bc.close();
+              }, 3000);
+            };
+            bc.onmessage = function (ev) {
+              if (ev.data && ev.data.type === "iboss-emu-ready") {
+                sendPayload();
+              }
+            };
+            setTimeout(sendPayload, 1200);
+          }
+          window.open(
+            "/emulator-sandbox",
+            "_blank",
+            "width=1024,height=720,menubar=no,toolbar=no"
+          );
+          hooks.toast(
+            "Launched isolated SharedArrayBuffer emulator (" +
+              core.toUpperCase() +
+              ")"
+          );
+        });
+      }
     }
 
     function renderDownloaderPage(container) {

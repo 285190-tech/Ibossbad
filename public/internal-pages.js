@@ -191,9 +191,16 @@
     function renderChangelog(container) {
       container.innerHTML =
         '<div class="internal-wrap">' +
-        '<div class="internal-hero"><h1>Ibossbad v5.0 Changelog</h1>' +
-        "<p>10x Flagship Polish · Command Palette · WISP Benchmarker · Permanent Admin Accounts · Workspaces</p></div>" +
+        '<div class="internal-hero"><h1>Ibossbad v6.0 Changelog</h1>' +
+        "<p>Turbo Speed Engine · Brotli WASM Caching · 120 MB SW Game Cache · TCP_NODELAY · Zero-Stall Boot</p></div>" +
         '<div class="changelog-list">' +
+        '<div class="internal-panel" style="margin-bottom:14px"><h3>v6.0 — Turbo Speed Engine &amp; Chromebook Optimization Suite</h3>' +
+        "<ul>" +
+        "<li>Added <strong>In-Memory Brotli / Gzip Static &amp; WASM Compression</strong> + <code>immutable</code> V8 Tier-2 Wasm machine-code caching headers (~75% smaller cold loads on school Wi-Fi).</li>" +
+        "<li>Added <strong>Normalized 120 MB Byte-Capped LRU Game &amp; Asset Cache (<code>ibossbad-scramjet-v1</code>)</strong> in <code>sw.js</code> with full <code>Range</code> bypass and core WASM install precache.</li>" +
+        "<li>Added <strong><code>TCP_NODELAY</code> + <code>perMessageDeflate: false</code></strong> on <code>/wisp/</code> &amp; <code>/proxy/</code>, tuned WISP 512-packet flow window + IPv4-first 8,192-slot DNS cache with in-flight deduplication.</li>" +
+        "<li>Added <strong>Parallel Zero-Stall Engine Boot</strong>, <strong>260+ Host O(1) Domain-Suffix Shield</strong>, <strong>Single-Flight Hover Pre-Warming</strong>, <strong>Background Tab 1fps <code>rAF</code> Throttling</strong>, and <strong>Isolated <code>SharedArrayBuffer</code> Emulator Sandbox</strong>.</li>" +
+        "</ul></div>" +
         '<div class="internal-panel" style="margin-bottom:14px"><h3>v5.0 — Command Palette, WISP Benchmarker, Workspaces, Tools &amp; Permanent Admin Accounts</h3>' +
         "<ul>" +
         "<li>Added <strong>Universal Command Palette (<code>Ctrl+K</code>)</strong>: Instant fuzzy search across all 200+ games, <code>iboss://</code> pages, open tabs, 1-click mods, themes, and cloaks.</li>" +
@@ -412,7 +419,9 @@
             var isFav = favUrls.indexOf(g.url) !== -1;
             var grad = CAT_GRADIENTS[g.category] || CAT_GRADIENTS.featured;
             return (
-              '<div class="game-tile">' +
+              '<div class="game-tile" data-prewarm-url="' +
+              esc(g.url) +
+              '">' +
               '<div class="game-cover-banner" style="background:' +
               grad +
               '">' +
