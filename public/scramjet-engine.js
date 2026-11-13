@@ -1,33 +1,77 @@
 "use strict";
 
 (function (window) {
-  var FAST_RELAY_SESSION_KEY = "ibossbad.fastRelay.v1";
+  var FAST_RELAY_SESSION_KEY = "ibossbad.fastRelay.v2";
   var FAST_RELAY_TTL_MS = 10 * 60 * 1000; // 10 minutes
   var PREWARM_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes per origin
   var SW_KEEPALIVE_INTERVAL_MS = 25000; // 25s (< Chrome's 30s idle SW kill timer)
 
+  // Universal WISP v1 relays first (work natively with both libcurl & epoxy),
+  // followed by Opium stealth WISP v2 domains (automatically routed via epoxy).
   var DEFAULT_PUBLIC_RELAYS = [
-    { url: "wss://cdn.northstreetumc.org/", label: "NorthStreet" },
-    { url: "wss://cdn.vipersfutbol.com/", label: "Vipers" },
-    { url: "wss://cdn.pcesc.org/", label: "PCESC" },
-    { url: "wss://cdn.kcchallengevbc.com/", label: "KCChallenge" },
-    { url: "wss://cdn.slcbmooc.org/", label: "SLCB" },
-    { url: "wss://cdn.topstargym.net/", label: "TopStar" },
-    { url: "wss://cdn.goaplytexas.org/", label: "ApplyTexas" },
-    { url: "wss://cdn.clearfieldswimming.com/", label: "Clearfield" },
-    { url: "wss://cdn.richardacademy.cfd/", label: "RichardAcademy" },
-    { url: "wss://athollcottage.com/connection/", label: "Atholl" },
-    { url: "wss://kidsprepnest.org/vi/", label: "KidsPrep" },
+    { url: "wss://wisp.mercurywork.shop/", label: "MercuryWorkshop" },
+    { url: "wss://anura.pro/", label: "Anura" },
     { url: "wss://definitelyscience.com/wisp/", label: "DefinitelyScience" },
+    { url: "wss://wisp.rhw.one/", label: "RHW" },
+    { url: "wss://nebulaproxy.io/wisp/", label: "Nebula" },
+    { url: "wss://wisp.terbiumon.top/wisp/", label: "Terbium" },
     { url: "wss://pgis-wisp.joytree.site/", label: "PGIS" },
     { url: "wss://mages.io/wisp/", label: "Mages" },
     { url: "wss://lichology.com/wisp/", label: "Lichology" },
-    { url: "wss://wisp.mercurywork.shop/", label: "MercuryWorkshop" },
-    { url: "wss://wisp.terbiumon.top/wisp/", label: "Terbium" },
-    { url: "wss://anura.pro/", label: "Anura" },
-    { url: "wss://nebulaproxy.io/wisp/", label: "Nebula" },
-    { url: "wss://wisp.rhw.one/", label: "RHW" },
+    { url: "wss://cdn.northstreetumc.org/", label: "NorthStreet", v2: true },
+    { url: "wss://cdn.vipersfutbol.com/", label: "Vipers", v2: true },
+    { url: "wss://cdn.pcesc.org/", label: "PCESC", v2: true },
+    { url: "wss://cdn.kcchallengevbc.com/", label: "KCChallenge", v2: true },
+    { url: "wss://cdn.slcbmooc.org/", label: "SLCB", v2: true },
+    { url: "wss://cdn.topstargym.net/", label: "TopStar", v2: true },
+    { url: "wss://cdn.goaplytexas.org/", label: "ApplyTexas", v2: true },
+    { url: "wss://cdn.clearfieldswimming.com/", label: "Clearfield", v2: true },
+    {
+      url: "wss://cdn.richardacademy.cfd/",
+      label: "RichardAcademy",
+      v2: true,
+    },
+    { url: "wss://athollcottage.com/connection/", label: "Atholl", v2: true },
+    { url: "wss://kidsprepnest.org/vi/", label: "KidsPrep", v2: true },
   ];
+
+  function normalizeWispEndpoint(rawUrl) {
+    var s = String(rawUrl || "").trim();
+    if (!s) return "";
+    if (!/^[a-z]+:\/\//i.test(s)) {
+      s = "wss://" + s;
+    }
+    s = s.replace(/^http:\/\//i, "ws://").replace(/^https:\/\//i, "wss://");
+    try {
+      var u = new URL(s);
+      if (!u.pathname || u.pathname.slice(-1) !== "/") {
+        u.pathname = (u.pathname || "") + "/";
+      }
+      return u.toString();
+    } catch (_e) {
+      return s.slice(-1) === "/" ? s : s + "/";
+    }
+  }
+
+  function resolveRelayProtocol(wispUrl, hint) {
+    if (hint === "WISP v2" || hint === "WISP v1") return hint;
+    if (
+      window.IbossServerFinder &&
+      typeof window.IbossServerFinder.getServerProtocol === "function"
+    ) {
+      return window.IbossServerFinder.getServerProtocol(wispUrl);
+    }
+    var norm = normalizeWispEndpoint(wispUrl);
+    for (var i = 0; i < DEFAULT_PUBLIC_RELAYS.length; i++) {
+      if (
+        normalizeWispEndpoint(DEFAULT_PUBLIC_RELAYS[i].url) === norm &&
+        DEFAULT_PUBLIC_RELAYS[i].v2
+      ) {
+        return "WISP v2";
+      }
+    }
+    return "WISP v1";
+  }
 
   function getSelfWispUrl() {
     var proto = window.location.protocol === "https:" ? "wss://" : "ws://";
@@ -125,27 +169,44 @@
   }
 
   function selectFastestPoolRelay(excludeUrl) {
-    var candidates = DEFAULT_PUBLIC_RELAYS.filter(function (r) {
-      return r.url !== excludeUrl;
+    var normExclude = normalizeWispEndpoint(excludeUrl);
+    var v1Candidates = DEFAULT_PUBLIC_RELAYS.filter(function (r) {
+      return !r.v2 && normalizeWispEndpoint(r.url) !== normExclude;
     });
-    return new Promise(function (resolve) {
-      var settled = false;
-      var remaining = candidates.length;
-      if (!remaining) {
-        resolve(null);
-        return;
-      }
-      candidates.forEach(function (cand) {
-        probeWsLatency(cand.url, 3200).then(function (ms) {
-          remaining--;
-          if (!settled && ms !== null) {
-            settled = true;
-            resolve({ url: cand.url, label: cand.label, latency: ms });
-          } else if (!settled && remaining === 0) {
-            resolve(null);
-          }
+    var v2Candidates = DEFAULT_PUBLIC_RELAYS.filter(function (r) {
+      return r.v2 && normalizeWispEndpoint(r.url) !== normExclude;
+    });
+
+    function raceGroup(group) {
+      return new Promise(function (resolve) {
+        var settled = false;
+        var remaining = group.length;
+        if (!remaining) {
+          resolve(null);
+          return;
+        }
+        group.forEach(function (cand) {
+          probeWsLatency(cand.url, 2800).then(function (ms) {
+            remaining--;
+            if (!settled && ms !== null) {
+              settled = true;
+              resolve({
+                url: cand.url,
+                label: cand.label,
+                latency: ms,
+                protocol: cand.v2 ? "WISP v2" : "WISP v1",
+              });
+            } else if (!settled && remaining === 0) {
+              resolve(null);
+            }
+          });
         });
       });
+    }
+
+    return raceGroup(v1Candidates).then(function (v1Winner) {
+      if (v1Winner) return v1Winner;
+      return raceGroup(v2Candidates);
     });
   }
 
@@ -213,21 +274,6 @@
           );
           for (var j = 0; j < pending.length; j++) {
             pending[j](d.stats);
-          }
-        } else if (d.type === "scramjet-nav-error" && allowPoolFailover) {
-          if (bareConnection && activeWispUrl) {
-            clearCachedRelay();
-            selectFastestPoolRelay(activeWispUrl)
-              .then(function (next) {
-                if (next) {
-                  return setBareMuxWisp(
-                    next.url,
-                    "Pool · " + next.label,
-                    next.latency
-                  );
-                }
-              })
-              .catch(function () {});
           }
         }
       });
@@ -300,7 +346,13 @@
           "Service Workers are disabled in this browser context."
         );
       }
-      await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+      var reg = await navigator.serviceWorker.register("/sw.js?v=10", {
+        scope: "/",
+        updateViaCache: "none",
+      });
+      if (reg && typeof reg.update === "function") {
+        reg.update().catch(function () {});
+      }
       await navigator.serviceWorker.ready;
 
       if (!navigator.serviceWorker.controller) {
@@ -375,7 +427,8 @@
         bareConnection = new BareMux.BareMuxConnection("/baremux/worker.js");
         bareClient = new BareMux.BareClient();
 
-        // Re-sync Scramjet RPC port & BareMux transport if Chrome respawns an idle Service Worker
+        // Re-sync Scramjet RPC port if Chrome respawns an idle Service Worker
+        // (BareMux runs in a SharedWorker and does not need re-binding on SW claim)
         if (navigator.serviceWorker) {
           navigator.serviceWorker.addEventListener(
             "controllerchange",
@@ -388,13 +441,6 @@
                     controller.setupMessagePort();
                   }
                 }
-                if (bareConnection && activeWispUrl) {
-                  setBareMuxWisp(
-                    activeWispUrl,
-                    activeWispLabel,
-                    activeWispLatency
-                  ).catch(function () {});
-                }
               } catch (_e) {}
             }
           );
@@ -406,42 +452,26 @@
       return initPromise;
     }
 
-    async function setBareMuxWisp(wispUrl, label, latency) {
-      var modPath =
-        bareTransportName === "epoxy"
-          ? "/epoxy/index.mjs?v=" + encodeURIComponent(epoxyVersionHash)
-          : "/libcurl/index.mjs?v=" + encodeURIComponent(libcurlVersionHash);
-      // [maxTotalSockets, maxPerHost, cachedWarmTlsSessions]
-      // 6 per host leans on HTTP/2 multiplexing while keeping 32 warm TLS 1.3 sessions cached
-      var modOpts =
-        bareTransportName === "epoxy"
-          ? [{ wisp: wispUrl }]
-          : [{ websocket: wispUrl, connections: [64, 6, 32] }];
+    async function setBareMuxWisp(wispUrl, label, latency, protocolHint) {
+      var normUrl = normalizeWispEndpoint(wispUrl);
+      if (!normUrl) return;
+      var proto = resolveRelayProtocol(normUrl, protocolHint);
+      // libcurl.js@0.7.4 speaks WISP v1 only; epoxy-transport speaks both WISP v1 and WISP v2.
+      // Automatically route WISP v2 servers via epoxy so stealth WISP v2 relays work seamlessly.
+      var useEpoxy = bareTransportName === "epoxy" || proto === "WISP v2";
+      var modPath = useEpoxy
+        ? "/epoxy/index.mjs?v=" + encodeURIComponent(epoxyVersionHash)
+        : "/libcurl/index.mjs?v=" + encodeURIComponent(libcurlVersionHash);
+      var modOpts = useEpoxy
+        ? [{ wisp: normUrl, wisp_v2: proto === "WISP v2" }]
+        : [{ websocket: normUrl, connections: [64, 6, 32] }];
 
       await bareConnection.setTransport(modPath, modOpts);
-      activeWispUrl = wispUrl;
-      activeWispLabel = label || wispUrl;
+      activeWispUrl = normUrl;
+      activeWispLabel = label || normUrl;
       activeWispLatency = latency || null;
-      saveCachedRelay(wispUrl, activeWispLabel, activeWispLatency);
+      saveCachedRelay(normUrl, activeWispLabel, activeWispLatency);
       emitStatus();
-    }
-
-    async function verifyCurrentTunnelCanReachInternet() {
-      try {
-        var probePromise = bareClient.fetch(
-          "https://www.cloudflare.com/cdn-cgi/trace",
-          { method: "GET" }
-        );
-        var timeoutPromise = new Promise(function (_, reject) {
-          setTimeout(function () {
-            reject(new Error("WISP tunnel probe timeout"));
-          }, 2600);
-        });
-        var res = await Promise.race([probePromise, timeoutPromise]);
-        return Boolean(res && res.status > 0);
-      } catch (_e) {
-        return false;
-      }
     }
 
     async function ensureTransportReady() {
@@ -461,7 +491,7 @@
           return;
         }
 
-        // Instant zero-probe path if this browser session already verified a fast relay
+        // Instant zero-probe path if this browser session already verified a relay
         var cachedRelay = loadCachedRelay();
         if (cachedRelay && cachedRelay.url) {
           await ensureInitialized();
@@ -470,56 +500,27 @@
             cachedRelay.label,
             cachedRelay.latency
           );
-          // Refresh RTT quietly in background; failover seamlessly if dead
-          probeWsLatency(cachedRelay.url, 2500).then(function (liveMs) {
-            if (liveMs === null && activeWispUrl === cachedRelay.url) {
-              clearCachedRelay();
-              activeWispUrl = null;
-              ensureTransportReady().catch(function () {});
-            } else if (liveMs !== null && activeWispUrl === cachedRelay.url) {
-              activeWispLatency = liveMs;
-              emitStatus();
-            }
-          });
           return;
         }
 
         var selfUrl = getSelfWispUrl();
 
-        // If backend reported outbound internet is available (or pool failover disabled),
-        // probe local /wisp/ in parallel with engine init and bind immediately with ZERO extra round-trip
+        // Bind to Self-Hosted (/wisp/) first whenever backend has outbound internet (e.g. Render / VPS).
+        // Do NOT run unsolicited background relay swaps that tear down active page loads!
         if (selfTunnelVerified !== false) {
           var parallelSelf = await Promise.all([
             ensureInitialized(),
-            probeWsLatency(selfUrl, 1600),
+            probeWsLatency(selfUrl, 2000),
           ]);
           var selfMs = parallelSelf[1];
           if (selfMs !== null) {
-            await setBareMuxWisp(selfUrl, "Self-Hosted (/wisp/)", selfMs);
-            if (!allowPoolFailover || selfTunnelVerified === true) {
-              selfTunnelVerified = true;
-              return;
-            }
-            // Verify asynchronously in background so navigation starts with 0ms stall
-            verifyCurrentTunnelCanReachInternet().then(function (ok) {
-              if (ok) {
-                selfTunnelVerified = true;
-              } else {
-                selfTunnelVerified = false;
-                clearCachedRelay();
-                if (allowPoolFailover && activeWispUrl === selfUrl) {
-                  selectFastestPoolRelay(selfUrl).then(function (bestBg) {
-                    if (bestBg) {
-                      setBareMuxWisp(
-                        bestBg.url,
-                        "Pool · " + bestBg.label,
-                        bestBg.latency
-                      ).catch(function () {});
-                    }
-                  });
-                }
-              }
-            });
+            selfTunnelVerified = true;
+            await setBareMuxWisp(
+              selfUrl,
+              "Self-Hosted (/wisp/)",
+              selfMs,
+              "WISP v1"
+            );
             return;
           }
           selfTunnelVerified = false;
@@ -533,13 +534,14 @@
             await setBareMuxWisp(
               best.url,
               "Pool · " + best.label,
-              best.latency
+              best.latency,
+              best.protocol
             );
             return;
           }
         }
 
-        await setBareMuxWisp(selfUrl, "Self-Hosted (/wisp/)", null);
+        await setBareMuxWisp(selfUrl, "Self-Hosted (/wisp/)", null, "WISP v1");
       })().finally(function () {
         transportReadyPromise = null;
       });
@@ -825,19 +827,23 @@
       configure: function (cfg) {
         if (!cfg) return;
         var needRebind = false;
-        if (
-          cfg.customWispUrl !== undefined &&
-          cfg.customWispUrl !== customWispUrl
-        ) {
-          customWispUrl = (cfg.customWispUrl || "").trim();
-          clearCachedRelay();
-          needRebind = true;
+        if (cfg.customWispUrl !== undefined) {
+          var nextCustom = cfg.customWispUrl
+            ? normalizeWispEndpoint(cfg.customWispUrl)
+            : "";
+          if (nextCustom !== customWispUrl) {
+            customWispUrl = nextCustom;
+            clearCachedRelay();
+            needRebind = true;
+          }
         }
         if (cfg.allowPoolFailover !== undefined) {
           if (Boolean(cfg.allowPoolFailover) !== allowPoolFailover) {
             allowPoolFailover = Boolean(cfg.allowPoolFailover);
-            clearCachedRelay();
-            needRebind = true;
+            if (!customWispUrl) {
+              clearCachedRelay();
+              needRebind = true;
+            }
           }
         }
         if (cfg.bareTransport && cfg.bareTransport !== bareTransportName) {
@@ -862,8 +868,10 @@
       },
       setDirectWispServer: async function (wispUrl, label, latency) {
         await ensureInitialized();
-        customWispUrl = wispUrl || "";
-        await setBareMuxWisp(wispUrl, label || wispUrl, latency || null);
+        var norm = normalizeWispEndpoint(wispUrl);
+        customWispUrl = norm;
+        allowPoolFailover = false;
+        await setBareMuxWisp(norm, label || norm, latency || null);
       },
       reconnect: async function () {
         clearCachedRelay();
@@ -871,36 +879,60 @@
         selfTunnelVerified = null;
         await ensureTransportReady();
       },
-      failoverRelay: async function (forceAllow) {
-        if (!forceAllow && !allowPoolFailover) return null;
-        await ensureInitialized();
-        clearCachedRelay();
-        var next = null;
-        if (
-          window.IbossServerFinder &&
-          typeof window.IbossServerFinder.findBestUnblockedServer === "function"
-        ) {
-          var found = await window.IbossServerFinder.findBestUnblockedServer({
-            excludeUrl: activeWispUrl,
-            forceFullScan: Boolean(forceAllow),
-          });
-          if (found) {
-            next = {
-              url: found.url,
-              label: found.label,
-              latency: found.latencyMs,
-            };
-          }
-        }
-        if (!next) {
-          next = await selectFastestPoolRelay(activeWispUrl);
-        }
-        if (next) {
-          await setBareMuxWisp(next.url, "Pool · " + next.label, next.latency);
-          return next;
-        }
-        return null;
-      },
+      failoverRelay: (function () {
+        var failoverInFlight = null;
+        var lastFailoverAt = 0;
+        return async function (forceAllow) {
+          if (!forceAllow && !allowPoolFailover) return null;
+          var now = Date.now();
+          if (failoverInFlight) return failoverInFlight;
+          if (!forceAllow && now - lastFailoverAt < 5000) return null;
+          failoverInFlight = (async function () {
+            try {
+              lastFailoverAt = Date.now();
+              await ensureInitialized();
+              clearCachedRelay();
+              var next = null;
+              if (
+                window.IbossServerFinder &&
+                typeof window.IbossServerFinder.findBestUnblockedServer ===
+                  "function"
+              ) {
+                var found = await window.IbossServerFinder.findBestUnblockedServer(
+                  {
+                    excludeUrl: activeWispUrl,
+                    forceFullScan: Boolean(forceAllow),
+                  }
+                );
+                if (found) {
+                  next = {
+                    url: found.url,
+                    label: found.label,
+                    latency: found.latencyMs,
+                    protocol: found.protocol,
+                  };
+                }
+              }
+              if (!next) {
+                next = await selectFastestPoolRelay(activeWispUrl);
+              }
+              if (next) {
+                await setBareMuxWisp(
+                  next.url,
+                  "Pool · " + next.label,
+                  next.latency,
+                  next.protocol
+                );
+                return next;
+              }
+              return null;
+            } finally {
+              failoverInFlight = null;
+            }
+          })();
+          return failoverInFlight;
+        };
+      })(),
     };
   }
 

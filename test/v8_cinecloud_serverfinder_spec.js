@@ -462,8 +462,30 @@ test("v8.0: /mgg-games/ direct mirror, broken CNAME healing, binary WISP server 
     var ytRecHtml = await ytRecRes.text();
     t.match(
       ytRecHtml,
-      /iboss:failover-retry/,
-      "Recovery page triggers automatic WISP server failover"
+      /btnSwitchRetry/,
+      "Recovery page exposes manual Switch Server & Retry button"
+    );
+    t.notMatch(
+      ytRecHtml,
+      /setTimeout\(function\(\)\{location\.reload/,
+      "Recovery page does NOT auto-loop or auto-reload on load"
+    );
+    t.notMatch(
+      swSrc,
+      /scramjet-nav-error/,
+      "SW never broadcasts background scramjet-nav-error relay swaps"
+    );
+    t.equal(
+      sfWin.IbossServerFinder.getServerProtocol(
+        "wss://cdn.northstreetumc.org/"
+      ),
+      "WISP v2",
+      "Identifies Opium stealth servers as WISP v2 (requiring epoxy transport)"
+    );
+    t.equal(
+      sfWin.IbossServerFinder.getServerProtocol("wss://wisp.mercurywork.shop/"),
+      "WISP v1",
+      "Identifies universal community relays as WISP v1"
     );
     t.match(
       ytRecHtml,
@@ -528,6 +550,112 @@ test("v8.0: /mgg-games/ direct mirror, broken CNAME healing, binary WISP server 
     );
     t.match(rootHtml, /\/ui\/server-finder\.js/, "Loads server-finder.js");
     t.match(rootHtml, /\/ui\/cine-cloud\.js/, "Loads cine-cloud.js");
+    t.match(
+      rootHtml,
+      /gateTabAdmin/,
+      "Includes Admin sign-in tab on authGate for Maintenance Lockdown recovery"
+    );
+    t.match(
+      rootHtml,
+      /adminGateForm/,
+      "Includes Admin password form on authGate"
+    );
+
+    // Verify Maintenance Lockdown + Kick All Sessions NEVER locks out Admins
+    var admLogin1 = await httpReq(port, "POST", "/api/admin/login", {
+      password: "admin",
+    });
+    t.equal(admLogin1.status, 200, "Admin login succeeds");
+    var admCookies = (admLogin1.headers["set-cookie"] || [])
+      .map(function (c) {
+        return c.split(";")[0];
+      })
+      .join("; ");
+
+    // Register both regular user presence and admin presence
+    await httpReq(
+      port,
+      "POST",
+      "/api/presence/heartbeat",
+      { url: "iboss://newtab" },
+      { Cookie: cookie }
+    );
+    await httpReq(
+      port,
+      "POST",
+      "/api/presence/heartbeat",
+      { url: "iboss://admin" },
+      { Cookie: admCookies }
+    );
+
+    // Enable Maintenance Lockdown AND Kick ALL sessions
+    var lockPut = await httpReq(
+      port,
+      "PUT",
+      "/api/admin/config",
+      { lockdownEnabled: true },
+      { Cookie: admCookies }
+    );
+    t.equal(lockPut.status, 200, "Admin enables Maintenance Lockdown");
+
+    var kickAllRes = await httpReq(
+      port,
+      "POST",
+      "/api/admin/session-action",
+      { sid: "ALL", action: "kick" },
+      { Cookie: admCookies }
+    );
+    t.equal(kickAllRes.status, 200, "Kick ALL sessions succeeds");
+
+    // Admin heartbeat must NOT be revoked after Kick All!
+    var admHb = await httpReq(
+      port,
+      "POST",
+      "/api/presence/heartbeat",
+      { url: "iboss://admin" },
+      { Cookie: admCookies }
+    );
+    var admHbJson = JSON.parse(admHb.body.toString("utf8"));
+    t.notOk(
+      admHbJson.revoked,
+      "Kick ALL sessions does NOT revoke the Admin caller session"
+    );
+
+    // Regular passcode login is blocked with 503 during Maintenance Lockdown
+    var userBlocked = await httpReq(port, "POST", "/api/auth/passcode", {
+      passcode: "ibossbad",
+    });
+    t.equal(
+      userBlocked.status,
+      503,
+      "Regular user passcode login returns 503 during Maintenance Lockdown"
+    );
+
+    // Even with ZERO cookies, Admin can sign in via Passcode box OR /api/admin/login with disableLockdown: true
+    var admViaPassBox = await httpReq(port, "POST", "/api/auth/passcode", {
+      passcode: "admin",
+    });
+    t.equal(
+      admViaPassBox.status,
+      200,
+      "Admin password entered in Passcode box bypasses Maintenance Lockdown"
+    );
+
+    var admUnlockLockdown = await httpReq(port, "POST", "/api/admin/login", {
+      password: "admin",
+      disableLockdown: true,
+    });
+    t.equal(
+      admUnlockLockdown.status,
+      200,
+      "Admin Gate login with disableLockdown: true succeeds with zero cookies"
+    );
+    var admUnlockJson = JSON.parse(admUnlockLockdown.body.toString("utf8"));
+    t.equal(
+      admUnlockJson.lockdownEnabled,
+      false,
+      "disableLockdown: true turns off Maintenance Mode in one step"
+    );
   } finally {
     await new Promise(function (resolve) {
       server.close(resolve);
