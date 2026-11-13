@@ -1,6 +1,6 @@
 "use strict";
 
-var URL = require("url"),
+var parseUrl = require("../lib/parse-url.js"),
   test = require("tap").test,
   _ = require("lodash"),
   concat = require("concat-stream");
@@ -174,7 +174,7 @@ var testLines = {
   '<button formaction="mytarget.php">': '<button formaction="mytarget.php">',
 };
 
-var testUri = URL.parse("http://localhost:8081/");
+var testUri = parseUrl("http://localhost:8081/");
 var testPrefix = "/proxy/";
 
 test("should rewrite (or not rewrite) various strings correctly", function (t) {

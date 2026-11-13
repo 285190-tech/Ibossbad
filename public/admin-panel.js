@@ -1430,6 +1430,13 @@
           : "") +
         '<button type="button" class="btn btn-secondary" id="admRefreshBtn">Refresh Live Data</button>' +
         "</div></div>" +
+        (s.config && s.config.defaultPasswordWarning
+          ? '<div class="internal-panel" style="margin-bottom:14px;border-color:rgba(245,158,11,0.55);background:rgba(245,158,11,0.1);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">' +
+            '<div><strong style="color:#fbbf24">⚠️ Security Notice: Default Admin Password Active</strong>' +
+            '<div style="font-size:12.5px;color:#fde68a;margin-top:2px">Set the <code>ADMIN_PASSWORD</code> environment variable on your host or rotate the Admin password now.</div></div>' +
+            '<button type="button" class="btn btn-primary btn-xs" data-adm-tab="policies">Rotate Password →</button>' +
+            "</div>"
+          : "") +
         '<div class="cat-pills" style="margin-bottom:16px">' +
         [
           { id: "overview", label: "Live Users & Controls" },

@@ -45,6 +45,20 @@
   function createInternalPagesController(hooks) {
     var activeGameCategory = "all";
     var activeGameQuery = "";
+    var activeGameSort = "featured";
+
+    // Launchpad Pomodoro & Procedural WebAudio Synth state
+    var LP_TASKS_KEY = "ibossbad.launchpadTasks.v1";
+    var LP_STATS_KEY = "ibossbad.launchpadStats.v1";
+    var lpModeSec = 25 * 60;
+    var lpRemainingSec = 25 * 60;
+    var lpRunning = false;
+    var lpTimerId = null;
+    var lpAmbientCtx = null;
+    var lpAmbientSource = null;
+    var lpAmbientGain = null;
+    var lpAmbientMode = "off"; // "off" | "brown" | "rain" | "drone"
+    var lpAmbientVol = 0.35;
 
     function recordRecentGame(url, title) {
       var list = loadJsonList(RECENT_GAMES_KEY).filter(function (x) {
@@ -82,6 +96,12 @@
           title: "Cine-Cloud OS (106 AAA PC Cloud Games)",
           desc:
             "Cyberpunk 2077, GTA V, Elden Ring, Poppy Playtime, Gamepad nav & 9 particle modes.",
+        },
+        {
+          url: "iboss://launchpad",
+          title: "Focus & Study Launchpad",
+          desc:
+            "Pomodoro timer, priority task checklist & procedural WebAudio ambient focus mixer.",
         },
         {
           url: "iboss://servers",
@@ -197,9 +217,16 @@
     function renderChangelog(container) {
       container.innerHTML =
         '<div class="internal-wrap">' +
-        '<div class="internal-hero"><h1>Ibossbad v7.0 Changelog</h1>' +
-        "<p>Cine-Cloud OS · Unblocked Server Finder · Self-Healing Relay &amp; Game Mirror · HD Glass GUI</p></div>" +
+        '<div class="internal-hero"><h1>Ibossbad v9.0 Changelog</h1>' +
+        "<p>Protocol-Smart WISP v1/v2 · Focus Launchpad · Smart Omnibox Math &amp; !Bangs · Cine-Cloud &amp; Arcade Refurbishment</p></div>" +
         '<div class="changelog-list">' +
+        '<div class="internal-panel" style="margin-bottom:14px"><h3>v9.0 — Protocol-Smart WISP v1/v2, Focus Launchpad, Smart Omnibox &amp; UI Refurbishment</h3>' +
+        "<ul>" +
+        "<li>Added <strong>Automatic WISP v1 / WISP v2 Transport Matching</strong> (<code>libcurl</code> on WISP v1 + <code>epoxy</code> on WISP v2 stealth relays) and eliminated background server-swapping loops.</li>" +
+        "<li>Added <strong><code>iboss://launchpad</code> Focus &amp; Study Workspace</strong>: Pomodoro timer with WebAudio chimes, persistent priority task board, and procedural WebAudio ambient mixer (Brown Noise, Rain, Deep Space Drone).</li>" +
+        "<li>Added <strong>Smart Omnibox Instant Math &amp; <code>!bang</code> Shortcuts</strong> (<code>!yt</code>, <code>!wiki</code>, <code>!gh</code>, <code>!reddit</code>, <code>!brave</code>, <code>!ddg</code>, <code>!g</code>), <code>Alt+1..9</code> quick tab switching, and 4 new curated themes (<em>Cyberpunk Neon</em>, <em>Aurora Borealis</em>, <em>OLED Pitch Black</em>, <em>Sakura Dusk</em>).</li>" +
+        "<li>Added <strong>Lockdown-Safe 👑 Admin Gate Tab</strong>, Default Admin Password security warning banner, LRU-memoized WHATWG URL parser (zero ESLint warnings), and LIFO keep-alive TLS session pooling.</li>" +
+        "</ul></div>" +
         '<div class="internal-panel" style="margin-bottom:14px"><h3>v8.0 — Cine-Cloud OS (106 PC Cloud Games), Unblocked Server Finder &amp; Self-Healing Game Mirror</h3>' +
         "<ul>" +
         "<li>Added <strong><code>iboss://cinecloud</code> (Cine-Cloud OS V1.5)</strong>: 106 AAA PC Cloud Games (<em>Cyberpunk 2077</em>, <em>GTA V</em>, <em>Elden Ring</em>, <em>Poppy Playtime</em>, <em>F1 22</em>), proxied Steam box art, playtime tracker, Gamepad spatial navigation, and 9 interactive particle modes.</li>" +
@@ -329,10 +356,29 @@
       var baseCats = window.IbossGamesCatalog
         ? window.IbossGamesCatalog.categories
         : [];
+      var allCatalog = window.IbossGamesCatalog
+        ? window.IbossGamesCatalog.search("", "all", customGames)
+        : [];
+      var catCounts = {};
+      allCatalog.forEach(function (item) {
+        catCounts[item.category] = (catCounts[item.category] || 0) + 1;
+      });
+
       var cats = [
-        baseCats[0] || { id: "all", label: "All Games" },
+        {
+          id: "all",
+          label: "All Games (" + allCatalog.length + ")",
+        },
         { id: "favorites", label: "★ Favorites (" + favUrls.length + ")" },
-      ].concat(baseCats.slice(1));
+      ].concat(
+        baseCats.slice(1).map(function (bc) {
+          var cnt = catCounts[bc.id] || 0;
+          return {
+            id: bc.id,
+            label: bc.label + (cnt ? " (" + cnt + ")" : ""),
+          };
+        })
+      );
 
       var results;
       if (activeGameCategory === "favorites") {
@@ -351,6 +397,19 @@
               customGames
             )
           : [];
+      }
+
+      if (activeGameSort === "az") {
+        results = results.slice().sort(function (a, b) {
+          return String(a.title || "").localeCompare(String(b.title || ""));
+        });
+      } else if (activeGameSort === "category") {
+        results = results.slice().sort(function (a, b) {
+          return (
+            String(a.category || "").localeCompare(String(b.category || "")) ||
+            String(a.title || "").localeCompare(String(b.title || ""))
+          );
+        });
       }
 
       var pads = navigator.getGamepads
@@ -398,9 +457,21 @@
             "</div></div>"
           : "") +
         '<div class="games-toolbar">' +
-        '<input type="text" id="gamesSearchInput" class="field-input games-search-input" placeholder="Search 200+ games &amp; aliases (e.g. btd5, mc, 1v1, slope, retro bowl, fnf)..." value="' +
+        '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
+        '<input type="text" id="gamesSearchInput" class="field-input games-search-input" style="flex:1;min-width:220px" placeholder="Search 200+ games &amp; aliases (e.g. btd5, mc, 1v1, slope, retro bowl, fnf)..." value="' +
         esc(activeGameQuery) +
         '" />' +
+        '<select id="gamesSortSelect" class="field-select" style="width:auto;min-width:155px" aria-label="Sort games">' +
+        '<option value="featured"' +
+        (activeGameSort === "featured" ? " selected" : "") +
+        ">Sort: Featured</option>" +
+        '<option value="az"' +
+        (activeGameSort === "az" ? " selected" : "") +
+        ">Sort: A → Z</option>" +
+        '<option value="category"' +
+        (activeGameSort === "category" ? " selected" : "") +
+        ">Sort: By Genre</option>" +
+        "</select></div>" +
         '<div class="cat-pills" id="gamesCatPills">' +
         cats
           .map(function (c) {
@@ -519,6 +590,14 @@
               nextInput.setSelectionRange(pos, pos);
             } catch (_e) {}
           }
+        });
+      }
+
+      var sortEl = container.querySelector("#gamesSortSelect");
+      if (sortEl) {
+        sortEl.addEventListener("change", function () {
+          activeGameSort = sortEl.value;
+          renderGamesHub(container);
         });
       }
 
@@ -920,12 +999,431 @@
         });
     }
 
+    function playCompletionChime() {
+      try {
+        var AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        var ctx = new AudioCtx();
+        [523.25, 659.25, 783.99, 1046.5].forEach(function (freq, idx) {
+          var osc = ctx.createOscillator();
+          var g = ctx.createGain();
+          osc.type = "sine";
+          osc.frequency.value = freq;
+          g.gain.setValueAtTime(0.001, ctx.currentTime + idx * 0.12);
+          g.gain.exponentialRampToValueAtTime(
+            0.18,
+            ctx.currentTime + idx * 0.12 + 0.04
+          );
+          g.gain.exponentialRampToValueAtTime(
+            0.0001,
+            ctx.currentTime + idx * 0.12 + 0.55
+          );
+          osc.connect(g);
+          g.connect(ctx.destination);
+          osc.start(ctx.currentTime + idx * 0.12);
+          osc.stop(ctx.currentTime + idx * 0.12 + 0.6);
+        });
+      } catch (_e) {}
+    }
+
+    function stopAmbientAudio() {
+      if (lpAmbientSource) {
+        try {
+          if (typeof lpAmbientSource.stop === "function")
+            lpAmbientSource.stop();
+          if (typeof lpAmbientSource.disconnect === "function")
+            lpAmbientSource.disconnect();
+        } catch (_e) {}
+        lpAmbientSource = null;
+      }
+      lpAmbientMode = "off";
+    }
+
+    function startAmbientAudio(mode) {
+      stopAmbientAudio();
+      if (mode === "off") return;
+      try {
+        var AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        if (!lpAmbientCtx) lpAmbientCtx = new AudioCtx();
+        if (lpAmbientCtx.state === "suspended") {
+          lpAmbientCtx.resume().catch(function () {});
+        }
+        lpAmbientGain = lpAmbientCtx.createGain();
+        lpAmbientGain.gain.value = lpAmbientVol;
+        lpAmbientGain.connect(lpAmbientCtx.destination);
+
+        if (mode === "drone") {
+          var osc1 = lpAmbientCtx.createOscillator();
+          var osc2 = lpAmbientCtx.createOscillator();
+          osc1.type = "sine";
+          osc2.type = "triangle";
+          osc1.frequency.value = 108;
+          osc2.frequency.value = 162;
+          var subGain = lpAmbientCtx.createGain();
+          subGain.gain.value = 0.25;
+          osc1.connect(subGain);
+          osc2.connect(subGain);
+          subGain.connect(lpAmbientGain);
+          osc1.start();
+          osc2.start();
+          lpAmbientSource = {
+            stop: function () {
+              osc1.stop();
+              osc2.stop();
+            },
+            disconnect: function () {
+              subGain.disconnect();
+            },
+          };
+        } else {
+          var bufLen = lpAmbientCtx.sampleRate * 3;
+          var buf = lpAmbientCtx.createBuffer(
+            1,
+            bufLen,
+            lpAmbientCtx.sampleRate
+          );
+          var out = buf.getChannelData(0);
+          var lastOut = 0;
+          for (var i = 0; i < bufLen; i++) {
+            var white = Math.random() * 2 - 1;
+            if (mode === "brown") {
+              out[i] = (lastOut + 0.02 * white) / 1.02;
+              lastOut = out[i];
+              out[i] *= 3.2;
+            } else {
+              out[i] = white * 0.45;
+            }
+          }
+          var noise = lpAmbientCtx.createBufferSource();
+          noise.buffer = buf;
+          noise.loop = true;
+          var filter = lpAmbientCtx.createBiquadFilter();
+          filter.type = mode === "rain" ? "bandpass" : "lowpass";
+          filter.frequency.value = mode === "rain" ? 1100 : 420;
+          noise.connect(filter);
+          filter.connect(lpAmbientGain);
+          noise.start();
+          lpAmbientSource = noise;
+        }
+        lpAmbientMode = mode;
+      } catch (_e) {}
+    }
+
+    function formatTimerMmSs(sec) {
+      var s = Math.max(0, Math.floor(sec));
+      var m = Math.floor(s / 60);
+      var rem = s % 60;
+      return String(m).padStart(2, "0") + ":" + String(rem).padStart(2, "0");
+    }
+
+    function renderLaunchpadPage(container) {
+      var tasks = loadJsonList(LP_TASKS_KEY);
+      var stats = { sessions: 0, focusMinutes: 0 };
+      try {
+        var rawStats = localStorage.getItem(LP_STATS_KEY);
+        if (rawStats) stats = Object.assign(stats, JSON.parse(rawStats));
+      } catch (_e) {}
+
+      var doneCount = tasks.filter(function (t) {
+        return t && t.done;
+      }).length;
+
+      container.innerHTML =
+        '<div class="internal-wrap">' +
+        '<div class="hub-visual-hero">' +
+        '<img src="/ui/assets/banner-cybercity.jpg" alt="" class="hub-hero-bg" />' +
+        '<div class="hub-hero-scrim"></div>' +
+        '<div class="hub-hero-body">' +
+        "<div>" +
+        '<span class="bento-kicker">⏱️ Productivity · Study · Procedural Focus Audio</span>' +
+        "<h1>Focus &amp; Study Launchpad</h1>" +
+        "<p>Pomodoro sprint timer, persistent task checklist, and zero-bandwidth WebAudio focus soundscapes.</p>" +
+        "</div>" +
+        '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
+        '<span class="cat-pill active">🔥 ' +
+        (stats.sessions || 0) +
+        " Sessions · " +
+        (stats.focusMinutes || 0) +
+        "m Focused</span>" +
+        '<button type="button" class="btn btn-secondary" id="lpJumpToolsBtn">🧮 Codec &amp; Math Tools</button>' +
+        "</div></div></div>" +
+        '<div class="internal-grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr));align-items:start">' +
+        // Card 1: Pomodoro Timer
+        '<div class="internal-panel">' +
+        "<h3>⏳ Pomodoro Sprint Timer</h3>" +
+        '<div class="cat-pills" style="margin:10px 0 14px">' +
+        [
+          { sec: 1500, label: "25m Focus" },
+          { sec: 3000, label: "50m Deep" },
+          { sec: 300, label: "5m Break" },
+          { sec: 900, label: "15m Break" },
+        ]
+          .map(function (p) {
+            return (
+              '<button type="button" class="cat-pill' +
+              (lpModeSec === p.sec ? " active" : "") +
+              '" data-lp-preset="' +
+              p.sec +
+              '">' +
+              p.label +
+              "</button>"
+            );
+          })
+          .join("") +
+        "</div>" +
+        '<div id="lpClockReadout" style="font-size:52px;font-weight:800;letter-spacing:2px;text-align:center;padding:18px 0;font-variant-numeric:tabular-nums;color:var(--accent)">' +
+        formatTimerMmSs(lpRemainingSec) +
+        "</div>" +
+        '<div style="display:flex;gap:8px;justify-content:center">' +
+        '<button type="button" class="btn btn-primary" id="lpStartPauseBtn">' +
+        (lpRunning ? "⏸ Pause" : "▶ Start Timer") +
+        "</button>" +
+        '<button type="button" class="btn btn-secondary" id="lpResetBtn">↺ Reset</button>' +
+        "</div>" +
+        "</div>" +
+        // Card 2: Procedural WebAudio Ambient Mixer
+        '<div class="internal-panel">' +
+        "<h3>🎧 Procedural Focus Soundscape</h3>" +
+        '<p class="settings-desc">Synthesized directly via WebAudio — zero network traffic and works offline.</p>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0">' +
+        [
+          { id: "off", label: "🔇 Off" },
+          { id: "brown", label: "🌊 Warm Brown Noise" },
+          { id: "rain", label: "🌧️ Soft Rain" },
+          { id: "drone", label: "🪐 Space Drone" },
+        ]
+          .map(function (m) {
+            return (
+              '<button type="button" class="btn ' +
+              (lpAmbientMode === m.id ? "btn-primary" : "btn-secondary") +
+              ' btn-xs" data-lp-amb="' +
+              m.id +
+              '">' +
+              m.label +
+              "</button>"
+            );
+          })
+          .join("") +
+        "</div>" +
+        '<label class="field-label" for="lpAmbVolRange" style="margin-top:10px">Ambient Volume (' +
+        Math.round(lpAmbientVol * 100) +
+        "%)</label>" +
+        '<input id="lpAmbVolRange" type="range" min="5" max="100" value="' +
+        Math.round(lpAmbientVol * 100) +
+        '" style="width:100%" />' +
+        "</div>" +
+        // Card 3: Quick Tasks Checklist
+        '<div class="internal-panel" style="grid-column:1 / -1">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">' +
+        "<h3>✅ Session Task Board (" +
+        doneCount +
+        "/" +
+        tasks.length +
+        " Completed)</h3>" +
+        (doneCount > 0
+          ? '<button type="button" class="btn btn-ghost btn-xs" id="lpClearDoneBtn">Clear Completed</button>'
+          : "") +
+        "</div>" +
+        '<form id="lpAddTaskForm" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">' +
+        '<input id="lpTaskInput" type="text" class="field-input" style="flex:1;min-width:200px" placeholder="Add an assignment, goal, or reminder..." required />' +
+        '<select id="lpTaskPrio" class="field-select" style="width:auto">' +
+        '<option value="high">🔥 High</option>' +
+        '<option value="normal" selected>⚡ Normal</option>' +
+        '<option value="chill">🌿 Chill</option>' +
+        "</select>" +
+        '<button type="submit" class="btn btn-primary">+ Add Task</button>' +
+        "</form>" +
+        (tasks.length === 0
+          ? '<div class="empty-bookmarks">No tasks yet — add your next study sprint or goal above.</div>'
+          : '<div style="display:flex;flex-direction:column;gap:8px">' +
+            tasks
+              .map(function (t, idx) {
+                var badge =
+                  t.prio === "high"
+                    ? "🔥 High"
+                    : t.prio === "chill"
+                    ? "🌿 Chill"
+                    : "⚡ Normal";
+                return (
+                  '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;background:rgba(15,23,42,0.55);border:1px solid var(--border)">' +
+                  '<input type="checkbox" data-lp-toggle="' +
+                  idx +
+                  '"' +
+                  (t.done ? " checked" : "") +
+                  ' style="width:17px;height:17px;cursor:pointer" />' +
+                  '<span style="flex:1;' +
+                  (t.done
+                    ? "text-decoration:line-through;opacity:0.55"
+                    : "font-weight:500") +
+                  '">' +
+                  esc(t.text) +
+                  "</span>" +
+                  '<span class="game-cat-tag">' +
+                  badge +
+                  "</span>" +
+                  '<button type="button" class="btn btn-ghost btn-xs" data-lp-del="' +
+                  idx +
+                  '" aria-label="Delete task">✕</button>' +
+                  "</div>"
+                );
+              })
+              .join("") +
+            "</div>") +
+        "</div></div></div>";
+
+      function syncReadout() {
+        var el = container.querySelector("#lpClockReadout");
+        var btn = container.querySelector("#lpStartPauseBtn");
+        if (el) el.textContent = formatTimerMmSs(lpRemainingSec);
+        if (btn) btn.textContent = lpRunning ? "⏸ Pause" : "▶ Start Timer";
+      }
+
+      container
+        .querySelector("#lpJumpToolsBtn")
+        .addEventListener("click", function () {
+          hooks.navigate("iboss://tools");
+        });
+
+      container.querySelectorAll("[data-lp-preset]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          lpModeSec = Number(btn.getAttribute("data-lp-preset")) || 1500;
+          lpRemainingSec = lpModeSec;
+          lpRunning = false;
+          if (lpTimerId) {
+            clearInterval(lpTimerId);
+            lpTimerId = null;
+          }
+          renderLaunchpadPage(container);
+        });
+      });
+
+      container
+        .querySelector("#lpStartPauseBtn")
+        .addEventListener("click", function () {
+          lpRunning = !lpRunning;
+          if (lpRunning) {
+            if (lpTimerId) clearInterval(lpTimerId);
+            lpTimerId = setInterval(function () {
+              if (!lpRunning) return;
+              lpRemainingSec = Math.max(0, lpRemainingSec - 1);
+              syncReadout();
+              if (lpRemainingSec <= 0) {
+                lpRunning = false;
+                clearInterval(lpTimerId);
+                lpTimerId = null;
+                playCompletionChime();
+                if (lpModeSec >= 1200) {
+                  stats.sessions = (stats.sessions || 0) + 1;
+                  stats.focusMinutes =
+                    (stats.focusMinutes || 0) + Math.round(lpModeSec / 60);
+                  try {
+                    localStorage.setItem(LP_STATS_KEY, JSON.stringify(stats));
+                  } catch (_e) {}
+                }
+                lpRemainingSec = lpModeSec;
+                if (hooks.toast) {
+                  hooks.toast("🎉 Sprint complete! Take a breather.");
+                }
+                if (container.isConnected) renderLaunchpadPage(container);
+              }
+            }, 1000);
+          } else if (lpTimerId) {
+            clearInterval(lpTimerId);
+            lpTimerId = null;
+          }
+          syncReadout();
+        });
+
+      container
+        .querySelector("#lpResetBtn")
+        .addEventListener("click", function () {
+          lpRunning = false;
+          if (lpTimerId) {
+            clearInterval(lpTimerId);
+            lpTimerId = null;
+          }
+          lpRemainingSec = lpModeSec;
+          syncReadout();
+        });
+
+      container.querySelectorAll("[data-lp-amb]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          startAmbientAudio(btn.getAttribute("data-lp-amb"));
+          renderLaunchpadPage(container);
+        });
+      });
+
+      var volRange = container.querySelector("#lpAmbVolRange");
+      if (volRange) {
+        volRange.addEventListener("input", function () {
+          lpAmbientVol = Math.max(0.05, Number(volRange.value || 35) / 100);
+          if (lpAmbientGain) {
+            lpAmbientGain.gain.value = lpAmbientVol;
+          }
+        });
+      }
+
+      container
+        .querySelector("#lpAddTaskForm")
+        .addEventListener("submit", function (ev) {
+          ev.preventDefault();
+          var inp = container.querySelector("#lpTaskInput");
+          var prio = container.querySelector("#lpTaskPrio");
+          var txt = (inp && inp.value ? inp.value : "").trim();
+          if (!txt) return;
+          tasks.unshift({
+            text: txt,
+            prio: (prio && prio.value) || "normal",
+            done: false,
+            ts: Date.now(),
+          });
+          saveStringList(LP_TASKS_KEY, tasks.slice(0, 80));
+          renderLaunchpadPage(container);
+        });
+
+      container.querySelectorAll("[data-lp-toggle]").forEach(function (chk) {
+        chk.addEventListener("change", function () {
+          var idx = Number(chk.getAttribute("data-lp-toggle"));
+          if (tasks[idx]) {
+            tasks[idx].done = Boolean(chk.checked);
+            saveStringList(LP_TASKS_KEY, tasks);
+            renderLaunchpadPage(container);
+          }
+        });
+      });
+
+      container.querySelectorAll("[data-lp-del]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var idx = Number(btn.getAttribute("data-lp-del"));
+          tasks.splice(idx, 1);
+          saveStringList(LP_TASKS_KEY, tasks);
+          renderLaunchpadPage(container);
+        });
+      });
+
+      var clearBtn = container.querySelector("#lpClearDoneBtn");
+      if (clearBtn) {
+        clearBtn.addEventListener("click", function () {
+          tasks = tasks.filter(function (t) {
+            return t && !t.done;
+          });
+          saveStringList(LP_TASKS_KEY, tasks);
+          renderLaunchpadPage(container);
+        });
+      }
+    }
+
     function render(url, container) {
       var clean = String(url || "")
         .toLowerCase()
         .trim();
       if (clean === "iboss://games") {
         renderGamesHub(container);
+        return true;
+      }
+      if (clean === "iboss://launchpad" || clean === "iboss://focus") {
+        renderLaunchpadPage(container);
         return true;
       }
       if (clean === "iboss://store") {

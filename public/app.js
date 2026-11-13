@@ -87,6 +87,27 @@
       accent: "#88c0d0",
       textPrimary: "#eceff4",
     },
+    aurora: {
+      bgBase: "#041019",
+      bgSurface: "#081c2b",
+      bgElevated: "#0f2d42",
+      accent: "#2dd4bf",
+      textPrimary: "#f0fdfa",
+    },
+    sakura: {
+      bgBase: "#140b16",
+      bgSurface: "#221226",
+      bgElevated: "#331b39",
+      accent: "#f472b6",
+      textPrimary: "#fdf2f8",
+    },
+    solarflare: {
+      bgBase: "#140e06",
+      bgSurface: "#24190a",
+      bgElevated: "#362510",
+      accent: "#f59e0b",
+      textPrimary: "#fffbeb",
+    },
   };
 
   function svgDataUri(svg) {
@@ -160,6 +181,7 @@
   const QUICK_LINKS = [
     { title: "200+ Games Hub", url: "iboss://games", badge: "GM" },
     { title: "Cine-Cloud PC", url: "iboss://cinecloud", badge: "CC" },
+    { title: "Focus Launchpad", url: "iboss://launchpad", badge: "FP" },
     { title: "Unblocked Servers", url: "iboss://servers", badge: "SV" },
     { title: "Media & Radio", url: "iboss://media", badge: "MD" },
     { title: "YouTube", url: "https://www.youtube.com/", badge: "YT" },
@@ -355,9 +377,67 @@
     return /^iboss:\/\//i.test(String(urlStr || "").trim());
   }
 
+  const BANG_ROUTES = {
+    "!yt": (q) =>
+      q
+        ? "https://www.youtube.com/results?search_query=" +
+          encodeURIComponent(q)
+        : "iboss://media",
+    "!wiki": (q) =>
+      q
+        ? "https://en.wikipedia.org/wiki/Special:Search?search=" +
+          encodeURIComponent(q)
+        : "https://en.wikipedia.org/",
+    "!gh": (q) =>
+      q
+        ? "https://github.com/search?q=" + encodeURIComponent(q)
+        : "https://github.com/",
+    "!reddit": (q) =>
+      q
+        ? "https://www.reddit.com/search/?q=" + encodeURIComponent(q)
+        : "https://www.reddit.com/",
+    "!brave": (q) =>
+      "https://search.brave.com/search?q=" + encodeURIComponent(q || ""),
+    "!ddg": (q) => "https://duckduckgo.com/?q=" + encodeURIComponent(q || ""),
+    "!g": (q) =>
+      "https://www.google.com/search?q=" + encodeURIComponent(q || ""),
+  };
+
+  function evaluateSafeMath(raw) {
+    const s = String(raw || "").trim();
+    if (!s || s.length > 80) return null;
+    if (!/[0-9]/.test(s) || !/[+\-*/%^()]/.test(s)) return null;
+    if (!/^[0-9+\-*/%^().,\s]+$/.test(s)) return null;
+    try {
+      const normalized = s.replace(/,/g, "").replace(/\^/g, "**");
+      // Guard against exponentiation DoS (e.g. 9**9**9)
+      if ((normalized.match(/\*\*/g) || []).length > 1) return null;
+      const fn = new Function("return (" + normalized + ");");
+      const val = fn();
+      if (typeof val === "number" && Number.isFinite(val)) {
+        const rounded = Math.round(val * 1e10) / 1e10;
+        if (String(rounded) === s.replace(/\s+/g, "")) return null;
+        return rounded;
+      }
+    } catch (_e) {}
+    return null;
+  }
+
   function resolveInputToUrl(rawInput) {
     const input = healLegacyUrl((rawInput || "").trim());
     if (!input) return null;
+
+    if (input.charAt(0) === "!") {
+      const spaceIdx = input.indexOf(" ");
+      const bangKey = (spaceIdx === -1
+        ? input
+        : input.slice(0, spaceIdx)
+      ).toLowerCase();
+      const bangRest = spaceIdx === -1 ? "" : input.slice(spaceIdx + 1).trim();
+      if (BANG_ROUTES[bangKey]) {
+        return BANG_ROUTES[bangKey](bangRest);
+      }
+    }
 
     if (/^iboss:\/\//i.test(input)) {
       return input.toLowerCase();
@@ -2799,6 +2879,7 @@
   }
 
   function saveSettingsFromModal() {
+    const prevEngine = state.settings.proxyEngine;
     state.settings.proxyEngine =
       document.getElementById("proxyEngineSelect").value || "scramjet";
     state.settings.bareTransport =
@@ -2852,6 +2933,12 @@
     applyCloak();
     applyWispConfiguration();
     syncToolbarSettings();
+    if (prevEngine !== state.settings.proxyEngine) {
+      const curTab = getActiveTab();
+      if (curTab && curTab.url && !isInternalUrl(curTab.url)) {
+        navigateTab(curTab, curTab.url, false);
+      }
+    }
     pushToCloud();
     document.getElementById("settingsModal").classList.add("hidden");
     showToast("Settings & theme applied");
@@ -2962,6 +3049,11 @@
       tag: "Cloud",
     },
     {
+      url: "iboss://launchpad",
+      title: "Focus & Study Launchpad (Pomodoro, Tasks & Soundscapes)",
+      tag: "Focus",
+    },
+    {
       url: "iboss://servers",
       title: "Unblocked Server Finder (Binary WISP Scanner)",
       tag: "Page",
@@ -3023,6 +3115,33 @@
     }
 
     const matches = [];
+    const mathVal = evaluateSafeMath(rawQuery);
+    if (mathVal !== null) {
+      matches.push({
+        title: "= " + String(mathVal),
+        sub: "Instant Calculator · Click to copy answer",
+        copyText: String(mathVal),
+        tag: "Math",
+      });
+    }
+
+    if (q.charAt(0) === "!") {
+      Object.keys(BANG_ROUTES).forEach((bk) => {
+        if (bk.indexOf(q.split(" ")[0]) === 0 && matches.length < 8) {
+          matches.push({
+            title: bk + " search shortcut",
+            sub: "Type '" + bk + " <query>' and press Enter",
+            url: BANG_ROUTES[bk](
+              q.indexOf(" ") === -1
+                ? ""
+                : rawQuery.slice(rawQuery.indexOf(" ") + 1)
+            ),
+            tag: "Bang",
+          });
+        }
+      });
+    }
+
     INTERNAL_OMNI_DIRECTORY.forEach((p) => {
       if (
         p.url.toLowerCase().includes(q) ||
@@ -3108,6 +3227,15 @@
         const picked = matches[Number(btn.getAttribute("data-omni-idx"))];
         box.classList.add("hidden");
         if (picked) {
+          if (picked.copyText !== undefined) {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard
+                .writeText(picked.copyText)
+                .catch(function () {});
+            }
+            showToast("Copied " + picked.copyText + " to clipboard!");
+            return;
+          }
           const tab = getActiveTab() || createTab("", true);
           navigateTab(tab, picked.url, true);
         }
@@ -3813,6 +3941,19 @@
       });
     });
 
+    const heroRandomGameBtn = document.getElementById("heroRandomGameBtn");
+    if (heroRandomGameBtn) {
+      heroRandomGameBtn.addEventListener("click", () => {
+        const list = window.IbossGamesCatalog
+          ? window.IbossGamesCatalog.search("", "all", state.customGames)
+          : [];
+        if (!list.length) return;
+        const pick = list[Math.floor(Math.random() * list.length)];
+        showToast("🎲 Launching " + pick.title + "!");
+        createTab(pick.url, true);
+      });
+    }
+
     // Top Bar & Toolbar Navigation Events
     document
       .getElementById("newTabBtn")
@@ -4434,6 +4575,24 @@
       if (ev.altKey && !ev.shiftKey && (ev.key === "t" || ev.key === "T")) {
         ev.preventDefault();
         createTab("", true);
+        return;
+      }
+
+      // Quick Tab Switch: Alt+1..8 jumps to tab index, Alt+9 jumps to last tab
+      if (
+        ev.altKey &&
+        !ev.ctrlKey &&
+        !ev.shiftKey &&
+        /^[1-9]$/.test(ev.key) &&
+        state.tabs.length > 0
+      ) {
+        ev.preventDefault();
+        const num = Number(ev.key);
+        const targetTab =
+          num === 9
+            ? state.tabs[state.tabs.length - 1]
+            : state.tabs[num - 1] || null;
+        if (targetTab) switchTab(targetTab.id);
         return;
       }
 
