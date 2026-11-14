@@ -6,11 +6,34 @@ const target = "http://example.com/page.html?query#hash";
 const location = new URL(proxy + prefix + target);
 
 const config = (global.unblocker = { prefix, url: target });
-const { fixUrl } = require("../lib/client/unblocker-client.js");
+const { fixUrl, initForWindow } = require("../lib/client/unblocker-client.js");
 
 // 1x1 transparent gif
 const pixel =
   " data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==";
+
+test("client URL rewriting defaults missing config to the standard proxy prefix", (t) => {
+  t.equal(
+    fixUrl("/challenge", undefined, location),
+    "/proxy/http://example.com/challenge"
+  );
+  t.equal(
+    fixUrl("https://captcha.example/verify", {}, location),
+    "/proxy/https://captcha.example/verify"
+  );
+  t.end();
+});
+
+test("client initialization tolerates missing config", (t) => {
+  const fakeWindow = {
+    URL,
+    location,
+    document: {},
+    addEventListener: function () {},
+  };
+  t.doesNotThrow(() => initForWindow(undefined, fakeWindow));
+  t.end();
+});
 
 const testCases = [
   { url: "http://foo.com/", expected: "/proxy/http://foo.com/" },
