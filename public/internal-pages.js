@@ -48,6 +48,7 @@
     var activeGameQuery = "";
     var activeGameSort = "featured";
     var gameCoverSourcesPromise = null;
+    var lazyPageRenderToken = 0;
 
     function loadGameCoverSources() {
       if (!gameCoverSourcesPromise) {
@@ -378,6 +379,12 @@
 
     function renderGamesHub(container) {
       var customGames = hooks.getCustomGames ? hooks.getCustomGames() : [];
+      var gameAvailability = hooks.getGameAvailability
+        ? hooks.getGameAvailability() || {}
+        : {};
+      var gameMirrors = hooks.getGameMirrors
+        ? hooks.getGameMirrors() || []
+        : [];
       var favUrls = loadStringList(FAV_GAMES_KEY);
       var hiddenUrls = loadStringList(HIDDEN_GAMES_KEY);
       var recentList = loadJsonList(RECENT_GAMES_KEY).filter(function (game) {
@@ -424,43 +431,78 @@
         })
       );
 
-      var results;
-      if (activeGameCategory === "hidden") {
-        results = window.IbossGamesCatalog
-          ? window.IbossGamesCatalog.search(activeGameQuery, "all", customGames)
-          : [];
-        results = results.filter(function (g) {
-          return hiddenUrls.indexOf(g.url) !== -1;
-        });
-      } else if (activeGameCategory === "favorites") {
-        results = window.IbossGamesCatalog.search(
-          activeGameQuery,
-          "all",
-          customGames
-        ).filter(function (g) {
-          return favUrls.indexOf(g.url) !== -1;
-        });
-      } else {
-        results = window.IbossGamesCatalog
-          ? window.IbossGamesCatalog.search(
-              activeGameQuery,
-              activeGameCategory,
-              customGames
-            )
-          : [];
-      }
-      if (activeGameCategory !== "hidden") {
-        results = results.filter(function (g) {
-          return hiddenUrls.indexOf(g.url) === -1;
-        });
+      function getResultsForQuery(query) {
+        var matches;
+        if (activeGameCategory === "hidden") {
+          matches = window.IbossGamesCatalog
+            ? window.IbossGamesCatalog.search(query, "all", customGames)
+            : [];
+          matches = matches.filter(function (game) {
+            return hiddenUrls.indexOf(game.url) !== -1;
+          });
+        } else if (activeGameCategory === "favorites") {
+          matches = window.IbossGamesCatalog
+            ? window.IbossGamesCatalog.search(query, "all", customGames).filter(
+                function (game) {
+                  return favUrls.indexOf(game.url) !== -1;
+                }
+              )
+            : [];
+        } else {
+          matches = window.IbossGamesCatalog
+            ? window.IbossGamesCatalog.search(
+                query,
+                activeGameCategory,
+                customGames
+              )
+            : [];
+        }
+        if (activeGameCategory !== "hidden") {
+          matches = matches.filter(function (game) {
+            return hiddenUrls.indexOf(game.url) === -1;
+          });
+        }
+
+        if (activeGameSort === "az") {
+          matches = matches.slice().sort(function (a, b) {
+            return String(a.title || "").localeCompare(String(b.title || ""));
+          });
+        } else if (activeGameSort === "category") {
+          matches = matches.slice().sort(function (a, b) {
+            return (
+              String(a.category || "").localeCompare(
+                String(b.category || "")
+              ) || String(a.title || "").localeCompare(String(b.title || ""))
+            );
+          });
+        }
+        return matches;
       }
 
+      var results = getResultsForQuery(activeGameQuery);
+      var checkableResults;
+
+      function getCheckableResults(games) {
+        return games.filter(function (game) {
+          return (
+            (game.source === "MonkeyGG2" &&
+              String(game.url || "").indexOf("/mgg-games/") === 0) ||
+            /^https?:\/\//i.test(String(game.url || ""))
+          );
+        });
+      }
+      checkableResults = getCheckableResults(results);
+      var visibleGameUrls = Object.create(null);
+      results.forEach(function (game) {
+        visibleGameUrls[game.url] = true;
+      });
+      var catalogForDisplay = allCatalog.slice();
       if (activeGameSort === "az") {
-        results = results.slice().sort(function (a, b) {
+        catalogForDisplay.sort(function (a, b) {
           return String(a.title || "").localeCompare(String(b.title || ""));
         });
       } else if (activeGameSort === "category") {
-        results = results.slice().sort(function (a, b) {
+        catalogForDisplay.sort(function (a, b) {
           return (
             String(a.category || "").localeCompare(String(b.category || "")) ||
             String(a.title || "").localeCompare(String(b.title || ""))
@@ -471,6 +513,42 @@
       var pads = navigator.getGamepads
         ? Array.from(navigator.getGamepads()).filter(Boolean)
         : [];
+
+      function formatAvailabilityDate(timestamp) {
+        if (!timestamp) return "";
+        var date = new Date(Number(timestamp));
+        return isNaN(date.getTime()) ? "" : date.toLocaleString();
+      }
+
+      var mirrorHealthMarkup = gameMirrors.length
+        ? gameMirrors
+            .map(function (mirror) {
+              var mirrorStatus = mirror.status || "unknown";
+              var mirrorLabel =
+                mirrorStatus === "available"
+                  ? "Available"
+                  : mirrorStatus === "unavailable"
+                  ? "Unavailable"
+                  : "Not checked";
+              var checkedAt = formatAvailabilityDate(mirror.lastCheckedAt);
+              return (
+                '<span class="game-mirror-health game-mirror-' +
+                esc(mirrorStatus) +
+                '"><span class="game-mirror-label">' +
+                esc(mirror.label || mirror.id || "Mirror") +
+                ": " +
+                esc(mirrorLabel) +
+                "</span>" +
+                (checkedAt
+                  ? '<span class="game-availability-date">Checked ' +
+                    esc(checkedAt) +
+                    "</span>"
+                  : "") +
+                "</span>"
+              );
+            })
+            .join("")
+        : '<span class="game-availability-date">Mirror status will appear after a check.</span>';
 
       container.innerHTML =
         '<div class="internal-wrap">' +
@@ -500,7 +578,7 @@
               .slice(0, 6)
               .map(function (rg) {
                 return (
-                  '<button type="button" class="cat-pill" data-play-url="' +
+                  '<button type="button" class="cat-pill" data-recent-game-play data-play-url="' +
                   esc(rg.url) +
                   '" data-play-title="' +
                   esc(rg.title) +
@@ -552,18 +630,31 @@
         '<input id="reqNotesInput" type="text" class="field-input" placeholder="Notes for Admin (optional)" />' +
         '<button type="button" class="btn btn-primary" id="submitReqBtn">Send to Admin</button>' +
         "</div></div>" +
-        '<div class="games-count-label">Showing <strong>' +
+        '<div class="games-count-label">Showing <strong id="gamesCountValue">' +
         results.length +
         "</strong> titles</div>" +
-        (results.length
-          ? ""
-          : '<div class="games-empty-state" role="status">' +
-            (activeGameCategory === "hidden"
-              ? "No games are hidden. Use Hide on a title to keep it out of your library."
-              : "No games match the current search or filters.") +
-            "</div>") +
+        '<div class="games-availability-panel internal-panel">' +
+        '<div class="games-availability-toolbar"><div><strong>Catalog availability</strong>' +
+        '<p class="settings-desc">Server-side reachability only; a site can still fail to load in a browser. Check the currently shown titles.</p></div>' +
+        '<button type="button" class="btn btn-secondary btn-xs" id="checkGameAvailabilityBtn"' +
+        (checkableResults.length ? "" : " disabled") +
+        ">Check " +
+        checkableResults.length +
+        " shown games</button></div>" +
+        '<div class="games-mirror-health"><strong>Mirror health</strong>' +
+        mirrorHealthMarkup +
+        '</div><p id="gameAvailabilityProgress" class="settings-desc" role="status" aria-live="polite">' +
+        checkableResults.length +
+        " checkable titles in this view.</p></div>" +
+        '<div id="gamesEmptyState" class="games-empty-state' +
+        (results.length ? " hidden" : "") +
+        '" role="status">' +
+        (activeGameCategory === "hidden"
+          ? "No games are hidden. Use Hide on a title to keep it out of your library."
+          : "No games match the current search or filters.") +
+        "</div>" +
         '<div class="games-catalog-grid" id="gamesCatalogGrid">' +
-        results
+        catalogForDisplay
           .map(function (g) {
             var isFav = favUrls.indexOf(g.url) !== -1;
             var isHidden = hiddenUrls.indexOf(g.url) !== -1;
@@ -572,8 +663,67 @@
               window.IbossVisualArt && window.IbossVisualArt.getGameCoverMeta
                 ? window.IbossVisualArt.getGameCoverMeta(g)
                 : null;
+            var availabilityRecord = gameAvailability[g.url] || null;
+            var availabilityState = availabilityRecord
+              ? availabilityRecord.status || "unknown"
+              : "unknown";
+            var availabilityLabel = !availabilityRecord
+              ? "Not checked"
+              : availabilityState === "available"
+              ? "Available"
+              : availabilityState === "unavailable"
+              ? "Unavailable"
+              : "Unverified";
+            var availabilityTitle = availabilityRecord
+              ? availabilityRecord.message || availabilityLabel
+              : "This title has not been checked yet.";
+            if (availabilityRecord && availabilityRecord.mirrorId) {
+              var usedMirror = gameMirrors.filter(function (mirror) {
+                return mirror.id === availabilityRecord.mirrorId;
+              })[0];
+              if (usedMirror) availabilityTitle += " via " + usedMirror.label;
+            }
+            if (availabilityRecord && availabilityRecord.lastCheckedAt) {
+              availabilityTitle +=
+                " · Last checked " +
+                formatAvailabilityDate(availabilityRecord.lastCheckedAt);
+            }
+            var availabilityDateMarkup =
+              availabilityRecord && availabilityRecord.lastCheckedAt
+                ? '<time class="game-availability-date" datetime="' +
+                  esc(
+                    new Date(
+                      Number(availabilityRecord.lastCheckedAt)
+                    ).toISOString()
+                  ) +
+                  '">Checked ' +
+                  esc(
+                    formatAvailabilityDate(availabilityRecord.lastCheckedAt)
+                  ) +
+                  "</time>"
+                : '<span class="game-availability-date">Not checked yet</span>';
+            var availabilityMarkup =
+              (g.source === "MonkeyGG2" &&
+                String(g.url || "").indexOf("/mgg-games/") === 0) ||
+              /^https?:\/\//i.test(String(g.url || ""))
+                ? '<div class="game-availability-line"><span class="game-availability-badge game-availability-' +
+                  esc(availabilityState) +
+                  '" title="' +
+                  esc(availabilityTitle) +
+                  '" aria-label="' +
+                  esc(g.title + ": " + availabilityLabel) +
+                  '"><span aria-hidden="true">●</span> ' +
+                  esc(availabilityLabel) +
+                  "</span>" +
+                  availabilityDateMarkup +
+                  "</div>"
+                : "";
             return (
-              '<div class="game-tile" data-prewarm-url="' +
+              '<div class="game-tile' +
+              (visibleGameUrls[g.url] ? "" : " hidden") +
+              '" data-game-url="' +
+              esc(g.url) +
+              '" data-prewarm-url="' +
               esc(g.url) +
               '">' +
               '<div class="game-cover-banner" style="background:' +
@@ -620,6 +770,7 @@
               '<div class="game-tile-title">' +
               esc(g.title) +
               "</div>" +
+              availabilityMarkup +
               '<div class="game-tile-actions">' +
               '<button type="button" class="btn btn-ghost btn-xs" data-game-details-url="' +
               esc(g.url) +
@@ -655,6 +806,59 @@
         '<footer class="game-detail-drawer-footer"><button type="button" id="gameDetailsPlayBtn" class="btn btn-primary" disabled>Play game</button></footer>' +
         "</aside></div></div>";
 
+      var availabilityCheckButton = container.querySelector(
+        "#checkGameAvailabilityBtn"
+      );
+      if (availabilityCheckButton) {
+        availabilityCheckButton.addEventListener("click", async function () {
+          if (typeof hooks.checkGameAvailability !== "function") return;
+          var urlsToCheck = [];
+          var seenCheckUrls = Object.create(null);
+          checkableResults.forEach(function (game) {
+            if (!seenCheckUrls[game.url]) {
+              seenCheckUrls[game.url] = true;
+              urlsToCheck.push(game.url);
+            }
+          });
+          availabilityCheckButton.disabled = true;
+          var progress = container.querySelector("#gameAvailabilityProgress");
+          try {
+            for (var offset = 0; offset < urlsToCheck.length; offset += 24) {
+              var batch = urlsToCheck.slice(offset, offset + 24);
+              if (progress) {
+                progress.textContent =
+                  "Checking " +
+                  Math.min(offset + batch.length, urlsToCheck.length) +
+                  " of " +
+                  urlsToCheck.length +
+                  " titles…";
+              }
+              var result = await hooks.checkGameAvailability(batch);
+              if (!result || !result.ok) {
+                throw new Error(
+                  (result && result.error) || "Availability check failed."
+                );
+              }
+            }
+            if (hooks.toast) {
+              hooks.toast(
+                "Checked availability for " + urlsToCheck.length + " titles."
+              );
+            }
+            renderGamesHub(container);
+          } catch (err) {
+            availabilityCheckButton.disabled = false;
+            if (progress) {
+              progress.textContent =
+                err.message || "Unable to check availability.";
+            }
+            if (hooks.toast) {
+              hooks.toast(err.message || "Unable to check availability.");
+            }
+          }
+        });
+      }
+
       container
         .querySelector("#surpriseGameBtn")
         .addEventListener("click", function () {
@@ -675,14 +879,42 @@
       if (searchEl) {
         searchEl.addEventListener("input", function () {
           activeGameQuery = searchEl.value;
-          var pos = searchEl.selectionStart;
-          renderGamesHub(container);
-          var nextInput = container.querySelector("#gamesSearchInput");
-          if (nextInput) {
-            nextInput.focus();
-            try {
-              nextInput.setSelectionRange(pos, pos);
-            } catch (_e) {}
+          results = getResultsForQuery(activeGameQuery);
+          checkableResults = getCheckableResults(results);
+
+          var resultUrls = Object.create(null);
+          results.forEach(function (game) {
+            resultUrls[game.url] = true;
+          });
+          var gamesGrid = container.querySelector("#gamesCatalogGrid");
+          if (gamesGrid) {
+            gamesGrid.querySelectorAll(".game-tile").forEach(function (tile) {
+              tile.classList.toggle(
+                "hidden",
+                !resultUrls[tile.getAttribute("data-game-url")]
+              );
+            });
+          }
+
+          var countValue = container.querySelector("#gamesCountValue");
+          if (countValue) countValue.textContent = String(results.length);
+          var emptyState = container.querySelector("#gamesEmptyState");
+          if (emptyState) {
+            emptyState.classList.toggle("hidden", results.length > 0);
+            emptyState.textContent =
+              activeGameCategory === "hidden"
+                ? "No games are hidden. Use Hide on a title to keep it out of your library."
+                : "No games match the current search or filters.";
+          }
+          if (availabilityCheckButton) {
+            availabilityCheckButton.disabled = checkableResults.length === 0;
+            availabilityCheckButton.textContent =
+              "Check " + checkableResults.length + " shown games";
+          }
+          var progress = container.querySelector("#gameAvailabilityProgress");
+          if (progress) {
+            progress.textContent =
+              checkableResults.length + " checkable titles in this view.";
           }
         });
       }
@@ -702,39 +934,16 @@
         });
       });
 
-      container.querySelectorAll("[data-fav-url]").forEach(function (btn) {
-        btn.addEventListener("click", function (ev) {
-          ev.stopPropagation();
-          var u = btn.getAttribute("data-fav-url");
-          var cur = loadStringList(FAV_GAMES_KEY);
-          var idx = cur.indexOf(u);
-          if (idx === -1) cur.unshift(u);
-          else cur.splice(idx, 1);
-          saveStringList(FAV_GAMES_KEY, cur);
-          renderGamesHub(container);
+      container
+        .querySelectorAll("[data-recent-game-play]")
+        .forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            var url = btn.getAttribute("data-play-url");
+            var title = btn.getAttribute("data-play-title");
+            recordRecentGame(url, title);
+            hooks.openInNewTab(url);
+          });
         });
-      });
-
-      container.querySelectorAll("[data-hide-url]").forEach(function (btn) {
-        btn.addEventListener("click", function () {
-          var url = btn.getAttribute("data-hide-url");
-          var hidden = loadStringList(HIDDEN_GAMES_KEY);
-          var index = hidden.indexOf(url);
-          if (index === -1) hidden.push(url);
-          else hidden.splice(index, 1);
-          saveStringList(HIDDEN_GAMES_KEY, hidden);
-          renderGamesHub(container);
-        });
-      });
-
-      container.querySelectorAll("[data-play-url]").forEach(function (btn) {
-        btn.addEventListener("click", function () {
-          var u = btn.getAttribute("data-play-url");
-          var t = btn.getAttribute("data-play-title");
-          recordRecentGame(u, t);
-          hooks.openInNewTab(u);
-        });
-      });
 
       var detailsBackdrop = container.querySelector("#gameDetailsBackdrop");
       var detailsCloseButton = container.querySelector("#gameDetailsCloseBtn");
@@ -778,98 +987,132 @@
         });
       }
 
-      container
-        .querySelectorAll("[data-game-details-url]")
-        .forEach(function (btn) {
-          btn.addEventListener("click", function () {
-            var url = btn.getAttribute("data-game-details-url");
-            var game = window.IbossGamesCatalog.builtin
-              .concat(customGames)
-              .filter(function (item) {
-                return item.url === url;
-              })[0];
-            if (!game || !detailsBackdrop || !detailsTitle || !detailsBody) {
-              return;
-            }
-            if (
-              activeDetailsGame &&
-              activeDetailsGame.url === game.url &&
-              !detailsBackdrop.classList.contains("hidden")
-            ) {
-              closeGameDetails();
-              return;
-            }
-            if (lastDetailsTrigger && lastDetailsTrigger !== btn) {
-              lastDetailsTrigger.setAttribute("aria-expanded", "false");
-              lastDetailsTrigger.textContent = "Info";
-            }
-            activeDetailsGame = game;
-            lastDetailsTrigger = btn;
-            btn.setAttribute("aria-expanded", "true");
-            btn.textContent = "Close";
-            detailsTitle.textContent = game.title;
-            detailsCategory.textContent = game.category || "Uncategorized";
-            detailsBody.innerHTML =
-              '<p class="game-detail-loading">Loading game details…</p>';
-            if (detailsPlayButton) detailsPlayButton.disabled = false;
-            detailsBackdrop.classList.remove("hidden");
-            detailsBackdrop.setAttribute("aria-hidden", "false");
-            if (detailsCloseButton) detailsCloseButton.focus();
+      function openGameDetails(btn) {
+        var url = btn.getAttribute("data-game-details-url");
+        var game = allCatalog.filter(function (item) {
+          return item.url === url;
+        })[0];
+        if (!game || !detailsBackdrop || !detailsTitle || !detailsBody) return;
+        if (
+          activeDetailsGame &&
+          activeDetailsGame.url === game.url &&
+          !detailsBackdrop.classList.contains("hidden")
+        ) {
+          closeGameDetails();
+          return;
+        }
+        if (lastDetailsTrigger && lastDetailsTrigger !== btn) {
+          lastDetailsTrigger.setAttribute("aria-expanded", "false");
+          lastDetailsTrigger.textContent = "Info";
+        }
+        activeDetailsGame = game;
+        lastDetailsTrigger = btn;
+        btn.setAttribute("aria-expanded", "true");
+        btn.textContent = "Close";
+        detailsTitle.textContent = game.title;
+        detailsCategory.textContent = game.category || "Uncategorized";
+        detailsBody.innerHTML =
+          '<p class="game-detail-loading">Loading game details…</p>';
+        if (detailsPlayButton) detailsPlayButton.disabled = false;
+        detailsBackdrop.classList.remove("hidden");
+        detailsBackdrop.setAttribute("aria-hidden", "false");
+        if (detailsCloseButton) detailsCloseButton.focus();
 
-            loadGameCoverSources().then(function (assets) {
-              if (activeDetailsGame !== game) return;
-              var source =
-                assets[game.cover ? game.cover.split("/").pop() : ""];
-              var sourceLink = source && source.sourcePage;
-              var rights = source && source.rightsStatus;
-              var sourceMarkup = sourceLink
-                ? '<p class="game-detail-source">Cover source: <a href="' +
-                  esc(sourceLink) +
-                  '" target="_blank" rel="noopener noreferrer">View source</a>' +
-                  (rights ? " · Rights: " + esc(rights) : "") +
-                  "</p>"
-                : '<p class="game-detail-source">Cover source and usage rights have not been verified.</p>';
-              var art =
-                window.IbossVisualArt && window.IbossVisualArt.getGameCoverMeta
-                  ? window.IbossVisualArt.getGameCoverMeta(game)
-                  : null;
-              var coverMarkup =
-                art && art.photo
-                  ? '<img class="game-detail-drawer-cover" src="' +
-                    esc(art.photo) +
-                    '" alt="' +
-                    esc(game.title + " cover art") +
-                    '" />'
-                  : "";
-              var gameDescription = game.description
-                ? "<p>" + esc(game.description) + "</p>"
-                : '<p class="game-detail-empty">No game description is available yet.</p>';
-              var inputInfo = game.inputs
-                ? "<p><strong>Inputs:</strong> " + esc(game.inputs) + "</p>"
-                : "";
-              var playerInfo = game.playerCount
-                ? "<p><strong>Players:</strong> " +
-                  esc(game.playerCount) +
-                  "</p>"
-                : "";
-              detailsBody.innerHTML =
-                coverMarkup +
-                gameDescription +
-                inputInfo +
-                playerInfo +
-                sourceMarkup;
-            });
-          });
+        loadGameCoverSources().then(function (assets) {
+          if (activeDetailsGame !== game) return;
+          var source = assets[game.cover ? game.cover.split("/").pop() : ""];
+          var sourceLink = source && source.sourcePage;
+          var rights = source && source.rightsStatus;
+          var sourceMarkup = sourceLink
+            ? '<p class="game-detail-source">Cover source: <a href="' +
+              esc(sourceLink) +
+              '" target="_blank" rel="noopener noreferrer">View source</a>' +
+              (rights ? " · Rights: " + esc(rights) : "") +
+              "</p>"
+            : '<p class="game-detail-source">Cover source and usage rights have not been verified.</p>';
+          var art =
+            window.IbossVisualArt && window.IbossVisualArt.getGameCoverMeta
+              ? window.IbossVisualArt.getGameCoverMeta(game)
+              : null;
+          var coverMarkup =
+            art && art.photo
+              ? '<img class="game-detail-drawer-cover" src="' +
+                esc(art.photo) +
+                '" alt="' +
+                esc(game.title + " cover art") +
+                '" />'
+              : "";
+          var gameDescription = game.description
+            ? "<p>" + esc(game.description) + "</p>"
+            : '<p class="game-detail-empty">No game description is available yet.</p>';
+          var inputInfo = game.inputs
+            ? "<p><strong>Inputs:</strong> " + esc(game.inputs) + "</p>"
+            : "";
+          var playerInfo = game.playerCount
+            ? "<p><strong>Players:</strong> " + esc(game.playerCount) + "</p>"
+            : "";
+          detailsBody.innerHTML =
+            coverMarkup +
+            gameDescription +
+            inputInfo +
+            playerInfo +
+            sourceMarkup;
         });
+      }
 
-      container.querySelectorAll("[data-pip-url]").forEach(function (btn) {
-        btn.addEventListener("click", function () {
-          var u = btn.getAttribute("data-pip-url");
-          var t = btn.getAttribute("data-pip-title");
-          recordRecentGame(u, t);
-          hooks.openMiniPlayer(u, t);
+      var gamesGrid = container.querySelector("#gamesCatalogGrid");
+      if (gamesGrid) {
+        gamesGrid.addEventListener("click", function (event) {
+          var btn =
+            event.target && event.target.closest
+              ? event.target.closest("button")
+              : null;
+          if (!btn || !gamesGrid.contains(btn)) return;
+
+          var favUrl = btn.getAttribute("data-fav-url");
+          if (favUrl !== null) {
+            if (event.stopPropagation) event.stopPropagation();
+            var favorites = loadStringList(FAV_GAMES_KEY);
+            var favoriteIndex = favorites.indexOf(favUrl);
+            if (favoriteIndex === -1) favorites.unshift(favUrl);
+            else favorites.splice(favoriteIndex, 1);
+            saveStringList(FAV_GAMES_KEY, favorites);
+            renderGamesHub(container);
+            return;
+          }
+
+          var hiddenUrl = btn.getAttribute("data-hide-url");
+          if (hiddenUrl !== null) {
+            var hidden = loadStringList(HIDDEN_GAMES_KEY);
+            var hiddenIndex = hidden.indexOf(hiddenUrl);
+            if (hiddenIndex === -1) hidden.push(hiddenUrl);
+            else hidden.splice(hiddenIndex, 1);
+            saveStringList(HIDDEN_GAMES_KEY, hidden);
+            renderGamesHub(container);
+            return;
+          }
+
+          var playUrl = btn.getAttribute("data-play-url");
+          if (playUrl !== null) {
+            var title = btn.getAttribute("data-play-title");
+            recordRecentGame(playUrl, title);
+            hooks.openInNewTab(playUrl);
+            return;
+          }
+
+          if (btn.getAttribute("data-game-details-url") !== null) {
+            openGameDetails(btn);
+            return;
+          }
+
+          var pipUrl = btn.getAttribute("data-pip-url");
+          if (pipUrl !== null) {
+            var pipTitle = btn.getAttribute("data-pip-title");
+            recordRecentGame(pipUrl, pipTitle);
+            hooks.openMiniPlayer(pipUrl, pipTitle);
+          }
         });
-      });
+      }
 
       var reqBtn = container.querySelector("#openGameReqModalBtn");
       var reqBox = container.querySelector("#gameReqInlineBox");
@@ -1000,6 +1243,12 @@
             return;
           }
           try {
+            if (typeof JSZip === "undefined") {
+              if (typeof hooks.loadScript !== "function") {
+                throw new Error("ZIP support could not be loaded.");
+              }
+              await hooks.loadScript("/vendor/jszip/jszip.min.js");
+            }
             var ext = await window.IbossExtensions.importZipExtension(
               fInput.files[0]
             );
@@ -1850,10 +2099,57 @@
       }
     }
 
+    function renderCineCloudPage(container, renderToken) {
+      function draw() {
+        if (renderToken !== lazyPageRenderToken) return;
+        if (!window.IbossCineCloud) {
+          throw new Error("CineCloud module unavailable");
+        }
+        if (hooks.initParticleEngine) hooks.initParticleEngine();
+        window.IbossCineCloud.renderCineCloudPage(container, {
+          openUrl: hooks.openUrl,
+          openPip: hooks.openPip,
+          buildProxyFrameUrl: hooks.buildProxyFrameUrl,
+          toast: hooks.toast,
+        });
+      }
+
+      if (
+        window.IbossCineCloud &&
+        Array.isArray(window.IBOSS_CINE_CLOUD_CATALOG)
+      ) {
+        draw();
+        return true;
+      }
+      if (typeof hooks.loadScript !== "function") return false;
+
+      container.innerHTML =
+        '<div class="internal-wrap"><div class="internal-panel" role="status">Loading CineCloud catalog…</div></div>';
+      var loadPromise = Promise.resolve();
+      if (!window.IbossCineCloud) {
+        loadPromise = loadPromise.then(function () {
+          return hooks.loadScript("/ui/cine-cloud.js?v=16");
+        });
+      }
+      if (!Array.isArray(window.IBOSS_CINE_CLOUD_CATALOG)) {
+        loadPromise = loadPromise.then(function () {
+          return hooks.loadScript("/ui/cine-cloud-catalog.js?v=15");
+        });
+      }
+      loadPromise.then(draw).catch(function () {
+        if (renderToken === lazyPageRenderToken) {
+          container.innerHTML =
+            '<div class="internal-wrap"><div class="internal-panel" role="alert">CineCloud could not be loaded. Please try again.</div></div>';
+        }
+      });
+      return true;
+    }
+
     function render(url, container) {
       var clean = String(url || "")
         .toLowerCase()
         .trim();
+      var renderToken = ++lazyPageRenderToken;
       if (clean === "iboss://games") {
         renderGamesHub(container);
         return true;
@@ -1902,17 +2198,8 @@
         hooks.diagnosticsTools.renderToolsPage(container);
         return true;
       }
-      if (
-        (clean === "iboss://cinecloud" || clean === "iboss://cloud") &&
-        window.IbossCineCloud
-      ) {
-        window.IbossCineCloud.renderCineCloudPage(container, {
-          openUrl: hooks.openUrl,
-          openPip: hooks.openPip,
-          buildProxyFrameUrl: hooks.buildProxyFrameUrl,
-          toast: hooks.toast,
-        });
-        return true;
+      if (clean === "iboss://cinecloud" || clean === "iboss://cloud") {
+        return renderCineCloudPage(container, renderToken);
       }
       if (
         (clean === "iboss://servers" || clean === "iboss://finder") &&

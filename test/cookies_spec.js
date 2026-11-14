@@ -52,6 +52,77 @@ test("should rewrite set-cookie paths", function (t) {
   t.end();
 });
 
+test("should preserve Secure captcha cookies on HTTPS proxy pages", function (t) {
+  var instance = cookies({
+    prefix: "/proxy/",
+    processContentTypes: [],
+  });
+  var data = getData();
+  data.url = "https://www.google.com/recaptcha/api2/anchor";
+  data.clientRequest.protocol = "https";
+  data.headers["set-cookie"] = [
+    "__Secure-3PAPISID=challenge-token; Domain=.google.com; Path=/; Secure; HttpOnly; SameSite=None",
+  ];
+
+  instance.handleResponse(data);
+  var rewritten = data.headers["set-cookie"][0];
+  t.match(rewritten, /Path=\/proxy\/https:\/\/www\.google\.com\//);
+  t.match(rewritten, /; Secure(?:;|$)/i);
+  t.match(rewritten, /; HttpOnly(?:;|$)/i);
+  t.match(rewritten, /; SameSite=None(?:;|$)/i);
+  t.end();
+});
+
+test("should keep copied challenge cookies Secure across HTTPS subdomain redirects", function (t) {
+  var instance = cookies({
+    prefix: "/proxy/",
+    processContentTypes: [],
+  });
+  var data = getData();
+  data.url = "https://www.google.com/recaptcha/";
+  data.redirectUrl = "https://accounts.google.com/recaptcha/";
+  data.clientRequest.protocol = "https";
+  data.clientRequest.headers = { cookie: "__Secure-3PAPISID=challenge-token" };
+
+  instance.handleResponse(data);
+  t.match(
+    data.headers["set-cookie"][0],
+    /Path=\/proxy\/https:\/\/accounts\.google\.com\//
+  );
+  t.match(data.headers["set-cookie"][0], /; Secure(?:;|$)/i);
+  t.end();
+});
+
+test("should not forward Secure challenge cookies to an HTTP target", function (t) {
+  var instance = cookies({
+    prefix: "/proxy/",
+    processContentTypes: [],
+  });
+  var data = getData();
+  data.url = "http://www.google.com/recaptcha/api2/anchor";
+  data.clientRequest.protocol = "https";
+  data.headers["set-cookie"] = [
+    "__Secure-3PAPISID=challenge-token; Path=/; Secure; SameSite=None",
+  ];
+
+  instance.handleResponse(data);
+  t.notMatch(data.headers["set-cookie"][0], /; Secure(?:;|$)/i);
+  t.end();
+});
+
+test("should drop Secure from cookies when the proxy itself is HTTP", function (t) {
+  var instance = cookies({
+    prefix: "/proxy/",
+    processContentTypes: [],
+  });
+  var data = getData();
+  data.headers["set-cookie"] = ["__Secure-example=token; Path=/; Secure"];
+
+  instance.handleResponse(data);
+  t.notMatch(data.headers["set-cookie"][0], /; Secure(?:;|$)/i);
+  t.end();
+});
+
 test("should rewrite the cookie that is percent-encoded correctly", function (t) {
   var instance = cookies({
     prefix: "/proxy/",

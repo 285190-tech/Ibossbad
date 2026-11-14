@@ -17,7 +17,7 @@ Ibossbad is a self-hosted stealth web browser, cloud gaming & media hub, product
 ### 2. Built-In `iboss://` Internal Hubs
 
 - `iboss://newtab` — **Refurbished Dashboard** with live Session Pulse telemetry, Visual Bento Hub cards, Quick Launch grid, and 1-click Wallpaper Switcher.
-- `iboss://games` — **207+ HTML5, Unity WebGL & Ruffle Flash Games** via the `/mgg-games/` direct mirror with **⭐ Favorites**, **🕒 Recently Played**, **🎲 Surprise Me**, game details/cover-source notes, and a reversible hidden-titles filter.
+- `iboss://games` — **207+ HTML5, Unity WebGL & Ruffle Flash Games** via the `/mgg-games/` direct mirror with nightly mirror health checks, per-game availability/last-checked badges, ordered mirror failover, **⭐ Favorites**, **🕒 Recently Played**, **🎲 Surprise Me**, game details/cover-source notes, and a reversible hidden-titles filter.
 - `iboss://cinecloud` — **Cine-Cloud OS Hub** featuring **106 AAA PC Cloud Titles**, **⭐ Favorites**, **🎲 Surprise Pick**, **Gamepad D-Pad/Stick Navigation**, and **9 Interactive Canvas Particle Modes**.
 - `iboss://launchpad` — **Focus & Productivity Launchpad** with a **Pomodoro Study Timer**, **Cloud-Synced Quick Tasks**, and a **Procedural WebAudio Ambient Focus Mixer** (Brown Noise, Soft Rain, Deep Space Drone).
 - `iboss://servers` — **Unblocked Server Finder** with live binary WISP v1/v2 round-trip latency benchmarks.
@@ -58,6 +58,8 @@ Configure production credentials via environment variables (never commit live se
 | `ADMIN_EMAILS`      | Optional comma-separated list of Supabase account emails granted permanent `ADMIN` role |
 | `SUPABASE_URL`      | Optional Supabase project URL for cloud sync & persistent admin store                   |
 | `SUPABASE_ANON_KEY` | Optional Supabase publishable/anon key                                                  |
+| `MGG_MIRRORS`       | Optional comma-separated ordered HTTP(S) mirror base URLs; first is primary, later entries are fallbacks (defaults to the bundled GitHub Raw, jsDelivr, and GitHub API mirrors) |
+| `GAME_AVAILABILITY_INTERVAL_MS` | Interval for the server-side mirror catalog sweep (default: 86,400,000 ms / 24 hours) |
 
 ## License
 

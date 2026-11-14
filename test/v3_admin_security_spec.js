@@ -359,14 +359,12 @@ tap.test(
     );
 
     // Verify GamesCatalog has 170+ real games
-    global.window = {};
-    require("../public/games-catalog.js");
+    var gamesCatalog = require("../public/games-catalog.js");
     t.ok(
-      global.window.IbossGamesCatalog.builtInGames.length >= 170,
+      gamesCatalog.builtInGames.length >= 170,
       "Built-in MonkeyGG2 + Web catalog contains 170+ real games (" +
-        global.window.IbossGamesCatalog.builtInGames.length +
+        gamesCatalog.builtInGames.length +
         ")"
     );
-    delete global.window;
   }
 );

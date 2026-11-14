@@ -188,9 +188,63 @@ test("v6.0 Speed Suite: Brotli/Gzip static WASM compression, ETag 304, WISP tuni
       "Main shell omits COOP so about:blank stealth launcher stays intact"
     );
     var shellHtml = zlib.brotliDecompressSync(shellRes.body).toString("utf8");
-    t.ok(
+    t.notOk(
       shellHtml.indexOf('href="/scram/scramjet.wasm.wasm"') !== -1,
-      "index.html preloads scramjet.wasm.wasm in <head>"
+      "the shell does not preload Scramjet WASM before it is needed"
+    );
+    var lazyStartupResources = [
+      "/vendor/jszip/jszip.min.js",
+      "/vendor/acorn/acorn.js",
+      "/vendor/acorn-walk/walk.js",
+      "/vendor/libcurl/libcurl.js",
+      "/scram/scramjet.all.js",
+      "/baremux/index.js",
+      "/ui/internal-pages.js",
+      "/ui/admin-panel.js",
+      "/ui/scramjet-engine.js",
+      "/ui/wisp-engine.js",
+      "/ui/cine-cloud-catalog.js",
+    ];
+    t.notOk(
+      lazyStartupResources.some(function (resource) {
+        return shellHtml.indexOf(resource) !== -1;
+      }),
+      "optional proxy and internal-page modules are not startup scripts"
+    );
+    var browserApp = fs.readFileSync(
+      path.join(__dirname, "..", "public", "app.js"),
+      "utf8"
+    );
+    t.ok(
+      browserApp.indexOf("function ensureScramjetEngine()") !== -1,
+      "Scramjet code is loaded on demand by the browser app"
+    );
+    t.ok(
+      browserApp.indexOf('loadScriptOnce("/vendor/acorn/acorn.js")') !== -1,
+      "Acorn is loaded only when WISP is used"
+    );
+    t.ok(
+      browserApp.indexOf('loadScriptOnce("/ui/internal-pages.js?v=17")') !==
+        -1 &&
+        browserApp.indexOf('loadScriptOnce("/ui/admin-panel.js?v=15")') !== -1,
+      "internal pages and admin UI are loaded only when opened"
+    );
+
+    var internalPagesSource = fs.readFileSync(
+      path.join(__dirname, "..", "public", "internal-pages.js"),
+      "utf8"
+    );
+    t.ok(
+      internalPagesSource.indexOf(
+        'hooks.loadScript("/vendor/jszip/jszip.min.js")'
+      ) !== -1 &&
+        internalPagesSource.indexOf(
+          'hooks.loadScript("/ui/cine-cloud.js?v=16")'
+        ) !== -1 &&
+        internalPagesSource.indexOf(
+          'hooks.loadScript("/ui/cine-cloud-catalog.js?v=15")'
+        ) !== -1,
+      "ZIP support and the CineCloud data catalog load only when used"
     );
 
     var emuRes = await rawGet(port, "/emulator-sandbox", {});
@@ -284,6 +338,63 @@ test("v6.0 Speed Suite: Brotli/Gzip static WASM compression, ETag 304, WISP tuni
     await new Promise(function (resolve) {
       server.close(resolve);
     });
+  }
+});
+
+test("v6.0 Speed Suite: production static cache avoids repeat filesystem metadata reads", async function (t) {
+  var previousNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = "production";
+  var assetPath = path.resolve(
+    path.join(__dirname, "..", "public", "styles.css")
+  );
+  var originalStat = fs.stat;
+  var targetStatCalls = 0;
+  fs.stat = function (filePath) {
+    if (path.resolve(String(filePath)) === assetPath) targetStatCalls++;
+    return originalStat.apply(this, arguments);
+  };
+
+  var instance = createApp({
+    passcode: "ibossbad",
+    adminPassword: "admin",
+    autoLoadSupabase: false,
+    skipInternetProbe: true,
+  });
+  var server = http.createServer(instance.app);
+  try {
+    await new Promise(function (resolve) {
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    var port = server.address().port;
+    var first = await rawGet(port, "/ui/styles.css", {
+      "Accept-Encoding": "br",
+    });
+    var statCallsAfterWarm = targetStatCalls;
+    var second = await rawGet(port, "/ui/styles.css", {
+      "Accept-Encoding": "br",
+    });
+
+    t.equal(first.status, 200, "first static asset request succeeds");
+    t.equal(second.status, 200, "warm-cache static request succeeds");
+    t.equal(
+      second.headers["content-encoding"],
+      "br",
+      "warm cache reuses its Brotli representation"
+    );
+    t.equal(
+      targetStatCalls,
+      statCallsAfterWarm,
+      "production cache hits skip the per-request fs.stat call"
+    );
+  } finally {
+    fs.stat = originalStat;
+    if (server.listening) {
+      await new Promise(function (resolve) {
+        server.close(resolve);
+      });
+    }
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
   }
 });
 
