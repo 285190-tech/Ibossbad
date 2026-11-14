@@ -16,6 +16,9 @@ function startServer(options) {
     console.log(
       "Ibossbad proxy server live on http://" + bindHost + ":" + port
     );
+    if (instance.startGameAvailabilitySchedule) {
+      instance.startGameAvailabilitySchedule();
+    }
   });
 
   return server;

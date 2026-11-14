@@ -252,6 +252,8 @@
     lastPanicTapTs: 0,
     splitMode: false,
     customGames: [],
+    gameAvailability: {},
+    gameMirrors: [],
     dismissedBroadcastTs: 0,
     settings: loadJson(STORAGE_KEYS.SETTINGS, DEFAULT_SETTINGS),
     bookmarks: loadJson(STORAGE_KEYS.BOOKMARKS, []),
@@ -293,6 +295,328 @@
   let ctxMenuTabId = null;
   let cmdSelectedIdx = 0;
   let cmdFilteredItems = [];
+  let internalPagesLoadPromise = null;
+  let adminPanelLoadPromise = null;
+  let scramjetEngineLoadPromise = null;
+  let wispEngineLoadPromise = null;
+  const dynamicScriptPromises = Object.create(null);
+  const preconnectedRelayHosts = Object.create(null);
+
+  function preconnectWispRelays() {
+    [
+      "https://definitelyscience.com",
+      "https://wisp.mercurywork.shop",
+      "https://anura.pro",
+    ].forEach((href) => {
+      if (preconnectedRelayHosts[href]) return;
+      preconnectedRelayHosts[href] = true;
+      const link = document.createElement("link");
+      link.rel = "preconnect";
+      link.href = href;
+      link.crossOrigin = "anonymous";
+      document.head.appendChild(link);
+    });
+  }
+
+  function loadScriptOnce(src) {
+    if (dynamicScriptPromises[src]) return dynamicScriptPromises[src];
+    dynamicScriptPromises[src] = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.async = true;
+      script.src = src;
+      script.onload = () => resolve();
+      script.onerror = () => {
+        delete dynamicScriptPromises[src];
+        script.remove();
+        reject(new Error("Unable to load browser module."));
+      };
+      document.head.appendChild(script);
+    });
+    return dynamicScriptPromises[src];
+  }
+
+  function createInternalPagesController() {
+    if (!window.IbossInternalPages) {
+      throw new Error("Internal pages are unavailable.");
+    }
+    return window.IbossInternalPages.create({
+      navigate: (url) => {
+        const tab = getActiveTab() || createTab("", true);
+        navigateTab(tab, url, true);
+      },
+      openUrl: (url, newTab) => {
+        if (newTab) {
+          createTab(url, true);
+        } else {
+          const tab = getActiveTab() || createTab("", true);
+          navigateTab(tab, url, true);
+        }
+      },
+      openInNewTab: (url) => createTab(url, true),
+      openMiniPlayer: openMiniPlayer,
+      openPip: openMiniPlayer,
+      buildProxyFrameUrl: (url) => buildProxiedPath(url),
+      mountStealthEmbed: (frameEl, targetUrl, preferredMode, onReady) => {
+        const wantScramjet =
+          preferredMode !== "stream" &&
+          state.settings.proxyEngine === "scramjet" &&
+          scramjetEngine &&
+          typeof scramjetEngine.navigateTabFrame === "function";
+        if (wantScramjet) {
+          const perceived = "/scramjet/" + encodeStealthToken(targetUrl);
+          scramjetEngine
+            .navigateTabFrame("stealth-embed-" + Date.now(), frameEl, targetUrl)
+            .then(() => {
+              if (typeof onReady === "function") {
+                onReady(perceived, "scramjet");
+              }
+            })
+            .catch(() => {
+              const streamPath = buildProxiedPath(targetUrl);
+              frameEl.src = streamPath;
+              if (typeof onReady === "function") {
+                onReady(streamPath, "stream");
+              }
+            });
+          return;
+        }
+        const streamPath = buildProxiedPath(targetUrl);
+        frameEl.src = streamPath;
+        if (typeof onReady === "function") {
+          onReady(streamPath, "stream");
+        }
+      },
+      getPublicConfig: () => ({ wispRelays: state.publicWispRelays || [] }),
+      getActiveWispUrl: () => {
+        if (scramjetEngine && scramjetEngine.getActiveWispUrl) {
+          const url = scramjetEngine.getActiveWispUrl();
+          if (url) return url;
+        }
+        return (state.wispStatus && state.wispStatus.wispUrl) || "";
+      },
+      onSelectWispServer: async (wispUrl, label, latency) => {
+        state.settings.wispPreset = "custom";
+        state.settings.customWispUrl = wispUrl;
+        saveJson(STORAGE_KEYS.SETTINGS, state.settings);
+        if (scramjetEngine && scramjetEngine.setDirectWispServer) {
+          try {
+            await scramjetEngine.setDirectWispServer(wispUrl, label, latency);
+          } catch (_e) {}
+        }
+        applyWispConfiguration();
+        pushToCloud();
+        showToast(
+          "⚡ Switched to " +
+            label +
+            (typeof latency === "number" ? " (" + latency + "ms)" : "")
+        );
+      },
+      getCustomGames: () => state.customGames,
+      getGameAvailability: () => state.gameAvailability,
+      getGameMirrors: () => state.gameMirrors,
+      checkGameAvailability: checkGamesAvailability,
+      pushGameSavesToCloud: (savesObj) => pushToCloud(savesObj),
+      pullGameSavesFromCloud: () => syncFromCloud(true),
+      mediaEmulator: mediaEmulator,
+      diagnosticsTools: diagnosticsTools,
+      loadScript: loadScriptOnce,
+      initParticleEngine: () => {
+        if (
+          window.IbossCineCloud &&
+          typeof window.IbossCineCloud.initGlobalParticleEngine === "function"
+        ) {
+          window.IbossCineCloud.initGlobalParticleEngine(
+            () => particlesActive && state.settings.particlesEnabled !== false
+          );
+        }
+      },
+      runScriptInOtherTab: (code, modName) => {
+        const target = state.tabs.find(
+          (tab) => tab.iframe && tab.url && !isInternalUrl(tab.url)
+        );
+        if (!target || !target.iframe || !target.iframe.contentWindow) {
+          showToast("Open a website or game tab first, then click Run!");
+          return;
+        }
+        try {
+          target.iframe.contentWindow.eval(code);
+          switchTab(target.id);
+          showToast("Launched " + modName + "!");
+        } catch (err) {
+          showToast("Failed to inject: " + (err.message || err));
+        }
+      },
+      toast: showToast,
+    });
+  }
+
+  function ensureInternalPages() {
+    if (internalPages) return Promise.resolve(internalPages);
+    if (!internalPagesLoadPromise) {
+      internalPagesLoadPromise = loadScriptOnce("/ui/internal-pages.js?v=17")
+        .then(() => {
+          internalPages = createInternalPagesController();
+          return internalPages;
+        })
+        .catch((err) => {
+          internalPagesLoadPromise = null;
+          throw err;
+        });
+    }
+    return internalPagesLoadPromise;
+  }
+
+  function createAdminPanelController() {
+    if (!window.IbossAdminPanel) {
+      throw new Error("Admin panel is unavailable.");
+    }
+    return window.IbossAdminPanel.create({
+      getSupabaseConfig: () => state.supabase,
+      getCurrentUserEmail: () =>
+        state.user && state.user.email ? state.user.email : "",
+      onAdminAuthenticated: () => {
+        state.isAdmin = true;
+        updateAdminCrownPill();
+        showToast("Admin Command Center unlocked");
+      },
+      reloadCustomGames: reloadCustomGames,
+      toast: showToast,
+    });
+  }
+
+  function ensureAdminPanel() {
+    if (adminPanel) return Promise.resolve(adminPanel);
+    if (!adminPanelLoadPromise) {
+      adminPanelLoadPromise = loadScriptOnce("/ui/admin-panel.js?v=15")
+        .then(() => {
+          adminPanel = createAdminPanelController();
+          return adminPanel;
+        })
+        .catch((err) => {
+          adminPanelLoadPromise = null;
+          throw err;
+        });
+    }
+    return adminPanelLoadPromise;
+  }
+
+  function createScramjetEngine() {
+    if (!window.IbossScramjetEngine) {
+      throw new Error("Scramjet is unavailable.");
+    }
+    scramjetEngine = window.IbossScramjetEngine.create({
+      onStatus: (status) => {
+        if (state.settings.proxyEngine === "scramjet") {
+          state.wispStatus = status;
+          updateTransportPill();
+        }
+      },
+      onRequestLog: (entry) => appendInspectorLog(entry),
+      onPopup: (_tabId, popupUrl) => {
+        createTab(popupUrl, true);
+        showToast("Opened popup in new tab");
+      },
+      onPageUpdate: (tabId, url, title) => {
+        const targetTab = state.tabs.find((tab) => tab.id === tabId);
+        if (!targetTab) return;
+        if (url && /^https?:\/\//i.test(url)) targetTab.url = url;
+        if (title) targetTab.title = title;
+        else if (url && !targetTab.title) targetTab.title = getDomain(url);
+        renderTabs();
+        if (targetTab.id === state.activeTabId) updateOmniboxForTab(targetTab);
+      },
+      onSubframeKeydown: (key) => {
+        if (state.settings.panicKey && key === state.settings.panicKey) {
+          handleBossKeyActivation();
+        }
+      },
+    });
+    applyWispConfiguration();
+    return scramjetEngine;
+  }
+
+  function ensureScramjetEngine() {
+    if (scramjetEngine) return Promise.resolve(scramjetEngine);
+    preconnectWispRelays();
+    if (!scramjetEngineLoadPromise) {
+      scramjetEngineLoadPromise = Promise.all([
+        loadScriptOnce("/scram/scramjet.all.js"),
+        loadScriptOnce("/baremux/index.js"),
+        loadScriptOnce("/ui/scramjet-engine.js?v=15"),
+      ])
+        .then(createScramjetEngine)
+        .catch((err) => {
+          scramjetEngineLoadPromise = null;
+          throw err;
+        });
+    }
+    return scramjetEngineLoadPromise;
+  }
+
+  function createWispEngine() {
+    if (!window.IbossWispEngine) {
+      throw new Error("WISP engine is unavailable.");
+    }
+    wispEngine = window.IbossWispEngine.create({
+      loadLibcurl: () => loadScriptOnce("/vendor/libcurl/libcurl.js"),
+      onStatus: (status) => {
+        if (state.settings.proxyEngine === "wisp") {
+          state.wispStatus = status;
+          updateTransportPill();
+        }
+      },
+      onRequestLog: (entry) => appendInspectorLog(entry),
+      onNavigate: (tabId, url, newTab) => {
+        if (newTab) {
+          createTab(url, true);
+        } else {
+          const targetTab =
+            state.tabs.find((tab) => tab.id === tabId) || getActiveTab();
+          if (targetTab) navigateTab(targetTab, url, true);
+        }
+      },
+      onReload: (tabId) => {
+        const targetTab =
+          state.tabs.find((tab) => tab.id === tabId) || getActiveTab();
+        if (targetTab && targetTab.url) {
+          navigateTab(targetTab, targetTab.url, false);
+        }
+      },
+      onPageUpdate: (tabId, url, title) => {
+        const targetTab = state.tabs.find((tab) => tab.id === tabId);
+        if (!targetTab) return;
+        if (url) targetTab.url = url;
+        if (title) targetTab.title = title;
+        renderTabs();
+        if (targetTab.id === state.activeTabId) updateOmniboxForTab(targetTab);
+      },
+    });
+    applyWispConfiguration();
+    return wispEngine;
+  }
+
+  function ensureWispEngine() {
+    if (wispEngine) return Promise.resolve(wispEngine);
+    preconnectWispRelays();
+    if (!wispEngineLoadPromise) {
+      wispEngineLoadPromise = loadScriptOnce("/ui/wisp-engine.js?v=16")
+        .then(createWispEngine)
+        .catch((err) => {
+          wispEngineLoadPromise = null;
+          throw err;
+        });
+    }
+    return wispEngineLoadPromise;
+  }
+
+  async function ensureWispSyntaxTools() {
+    try {
+      await loadScriptOnce("/vendor/acorn/acorn.js");
+      await loadScriptOnce("/vendor/acorn-walk/walk.js");
+    } catch (_e) {
+      // WISP can still use its non-AST fallback when these optional helpers fail.
+    }
+  }
 
   function loadJson(key, fallback) {
     try {
@@ -1472,6 +1796,15 @@
       return;
     }
 
+    // Load proxy code only when a site is actually opened. Authenticated users
+    // start this work in the background during bootstrap; guest/stream sessions
+    // avoid downloading the Scramjet runtime entirely.
+    if (state.settings.proxyEngine === "scramjet" && !scramjetEngine) {
+      try {
+        await ensureScramjetEngine();
+      } catch (_e) {}
+    }
+
     // Flagship Scramjet Service Worker + BareMux WISP engine
     if (state.settings.proxyEngine === "scramjet" && scramjetEngine) {
       if (tab.id === state.activeTabId) {
@@ -1502,16 +1835,20 @@
         return;
       } catch (sjErr) {
         if (!wispEngine) {
-          if (tab.id === state.activeTabId && tab.navToken === myToken) {
-            setLoadingProgress(false, "");
+          try {
+            await ensureWispEngine();
+          } catch (_wispErr) {
+            if (tab.id === state.activeTabId && tab.navToken === myToken) {
+              setLoadingProgress(false, "");
+            }
+            tab.blobUrl = buildErrorBlobUrl(
+              resolved,
+              (sjErr && sjErr.message) || "Scramjet initialization failed",
+              tab.id
+            );
+            iframe.src = tab.blobUrl;
+            return;
           }
-          tab.blobUrl = buildErrorBlobUrl(
-            resolved,
-            (sjErr && sjErr.message) || "Scramjet initialization failed",
-            tab.id
-          );
-          iframe.src = tab.blobUrl;
-          return;
         }
         showToast(
           "Service Worker restricted — switched to SW-free GUST WISP fallback"
@@ -1521,8 +1858,12 @@
 
     // SW-Free GUST Blob WISP fallback
     if (!wispEngine) {
-      iframe.src = buildProxiedPath(resolved);
-      return;
+      try {
+        await ensureWispEngine();
+      } catch (_e) {
+        iframe.src = buildProxiedPath(resolved);
+        return;
+      }
     }
 
     if (tab.id === state.activeTabId) {
@@ -1530,6 +1871,7 @@
     }
 
     try {
+      await ensureWispSyntaxTools();
       const res = await wispEngine.loadPage(resolved, tab.id, (stage) => {
         if (tab.id === state.activeTabId && tab.navToken === myToken) {
           setLoadingProgress(true, stage);
@@ -1675,8 +2017,14 @@
     const url = (activeTab && activeTab.url) || "";
     const internal = isInternalUrl(url);
 
-    // Pause background particles whenever an active external game/site is showing
+    // Pause background particles whenever an active external game/site is showing.
     particlesActive = !url;
+    if (
+      window.IbossCineCloud &&
+      typeof window.IbossCineCloud.wakeGlobalParticleEngine === "function"
+    ) {
+      window.IbossCineCloud.wakeGlobalParticleEngine();
+    }
 
     // Determine secondary tab if Split-Screen mode is active
     let secondaryTabId = null;
@@ -1719,10 +2067,65 @@
       newTabView.classList.add("hidden");
       iframesStage.classList.add("hidden");
       internalView.classList.remove("hidden");
-      if (url === "iboss://admin" && adminPanel) {
-        adminPanel.open(internalView);
+      const requestedTabId = activeTab && activeTab.id;
+      if (url === "iboss://admin") {
+        if (adminPanel) {
+          adminPanel.open(internalView);
+        } else {
+          internalView.innerHTML =
+            '<div class="internal-wrap"><div class="internal-panel" role="status">Loading administrative tools…</div></div>';
+          ensureAdminPanel()
+            .then((panel) => {
+              const currentTab = getActiveTab();
+              if (
+                currentTab &&
+                currentTab.id === requestedTabId &&
+                currentTab.url === url &&
+                !internalView.classList.contains("hidden")
+              ) {
+                panel.open(internalView);
+              }
+            })
+            .catch(() => {
+              const currentTab = getActiveTab();
+              if (
+                currentTab &&
+                currentTab.id === requestedTabId &&
+                currentTab.url === url
+              ) {
+                internalView.innerHTML =
+                  '<div class="internal-wrap"><div class="internal-panel" role="alert">Unable to load administrative tools. Please retry.</div></div>';
+              }
+            });
+        }
       } else if (internalPages) {
         internalPages.render(url, internalView);
+      } else {
+        internalView.innerHTML =
+          '<div class="internal-wrap"><div class="internal-panel" role="status">Loading internal page…</div></div>';
+        ensureInternalPages()
+          .then((pages) => {
+            const currentTab = getActiveTab();
+            if (
+              currentTab &&
+              currentTab.id === requestedTabId &&
+              currentTab.url === url &&
+              !internalView.classList.contains("hidden")
+            ) {
+              pages.render(url, internalView);
+            }
+          })
+          .catch(() => {
+            const currentTab = getActiveTab();
+            if (
+              currentTab &&
+              currentTab.id === requestedTabId &&
+              currentTab.url === url
+            ) {
+              internalView.innerHTML =
+                '<div class="internal-wrap"><div class="internal-panel" role="alert">Unable to load this internal page. Please retry.</div></div>';
+            }
+          });
       }
     } else {
       newTabView.classList.add("hidden");
@@ -1835,9 +2238,11 @@
     )
       ? JOJO_HFTF_UPSTREAM_URL
       : targetUrl;
-    if (state.settings.proxyEngine === "scramjet" && scramjetEngine) {
-      scramjetEngine
-        .navigateTabFrame("mini-pip", frameEl, effectiveTarget)
+    if (state.settings.proxyEngine === "scramjet") {
+      ensureScramjetEngine()
+        .then((engine) =>
+          engine.navigateTabFrame("mini-pip", frameEl, effectiveTarget)
+        )
         .catch(() => {
           frameEl.src = buildProxiedPath(effectiveTarget);
         });
@@ -2851,7 +3256,40 @@
       if (d && Array.isArray(d.customGames)) {
         state.customGames = d.customGames;
       }
+      if (d && d.availability && typeof d.availability === "object") {
+        state.gameAvailability = d.availability;
+      }
+      if (d && Array.isArray(d.mirrors)) {
+        state.gameMirrors = d.mirrors;
+      }
     } catch (_e) {}
+  }
+
+  async function checkGamesAvailability(urls) {
+    try {
+      const response = await fetch("/api/games/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ urls }),
+      });
+      const data = await response.json();
+      if (response.ok && data && data.availability) {
+        state.gameAvailability = Object.assign(
+          {},
+          state.gameAvailability,
+          data.availability
+        );
+      }
+      if (response.ok && data && Array.isArray(data.mirrors)) {
+        state.gameMirrors = data.mirrors;
+      }
+      return {
+        ok: response.ok && !(data && data.ok === false),
+        error: (data && data.error) || "Availability check failed.",
+      };
+    } catch (_err) {
+      return { ok: false, error: "Unable to reach the availability service." };
+    }
   }
 
   // --- Settings Modal ---
@@ -3053,6 +3491,12 @@
     applyTheme();
     applyCloak();
     applyWispConfiguration();
+    if (
+      window.IbossCineCloud &&
+      typeof window.IbossCineCloud.wakeGlobalParticleEngine === "function"
+    ) {
+      window.IbossCineCloud.wakeGlobalParticleEngine();
+    }
     syncToolbarSettings();
     if (prevEngine !== state.settings.proxyEngine) {
       const curTab = getActiveTab();
@@ -3682,200 +4126,6 @@
       });
     }
 
-    if (window.IbossInternalPages) {
-      internalPages = window.IbossInternalPages.create({
-        navigate: (url) => {
-          const tab = getActiveTab() || createTab("", true);
-          navigateTab(tab, url, true);
-        },
-        openUrl: (url, newTab) => {
-          if (newTab) {
-            createTab(url, true);
-          } else {
-            const tab = getActiveTab() || createTab("", true);
-            navigateTab(tab, url, true);
-          }
-        },
-        openInNewTab: (url) => createTab(url, true),
-        openMiniPlayer: openMiniPlayer,
-        openPip: openMiniPlayer,
-        buildProxyFrameUrl: (url) => buildProxiedPath(url),
-        mountStealthEmbed: (frameEl, targetUrl, preferredMode, onReady) => {
-          const wantScramjet =
-            preferredMode !== "stream" &&
-            state.settings.proxyEngine === "scramjet" &&
-            scramjetEngine &&
-            typeof scramjetEngine.navigateTabFrame === "function";
-          if (wantScramjet) {
-            const perceived = "/scramjet/" + encodeStealthToken(targetUrl);
-            scramjetEngine
-              .navigateTabFrame(
-                "stealth-embed-" + Date.now(),
-                frameEl,
-                targetUrl
-              )
-              .then(() => {
-                if (typeof onReady === "function") {
-                  onReady(perceived, "scramjet");
-                }
-              })
-              .catch(() => {
-                const streamPath = buildProxiedPath(targetUrl);
-                frameEl.src = streamPath;
-                if (typeof onReady === "function") {
-                  onReady(streamPath, "stream");
-                }
-              });
-            return;
-          }
-          const streamPath = buildProxiedPath(targetUrl);
-          frameEl.src = streamPath;
-          if (typeof onReady === "function") {
-            onReady(streamPath, "stream");
-          }
-        },
-        getPublicConfig: () => ({ wispRelays: state.publicWispRelays || [] }),
-        getActiveWispUrl: () => {
-          if (scramjetEngine && scramjetEngine.getActiveWispUrl) {
-            const u = scramjetEngine.getActiveWispUrl();
-            if (u) return u;
-          }
-          return (state.wispStatus && state.wispStatus.wispUrl) || "";
-        },
-        onSelectWispServer: async (wispUrl, label, latency) => {
-          state.settings.wispPreset = "custom";
-          state.settings.customWispUrl = wispUrl;
-          saveJson(STORAGE_KEYS.SETTINGS, state.settings);
-          if (scramjetEngine && scramjetEngine.setDirectWispServer) {
-            try {
-              await scramjetEngine.setDirectWispServer(wispUrl, label, latency);
-            } catch (_e) {}
-          }
-          applyWispConfiguration();
-          pushToCloud();
-          showToast(
-            "⚡ Switched to " +
-              label +
-              (typeof latency === "number" ? " (" + latency + "ms)" : "")
-          );
-        },
-        getCustomGames: () => state.customGames,
-        pushGameSavesToCloud: (savesObj) => pushToCloud(savesObj),
-        pullGameSavesFromCloud: () => syncFromCloud(true),
-        mediaEmulator: mediaEmulator,
-        diagnosticsTools: diagnosticsTools,
-        runScriptInOtherTab: (code, modName) => {
-          const target = state.tabs.find(
-            (t) => t.iframe && t.url && !isInternalUrl(t.url)
-          );
-          if (!target || !target.iframe || !target.iframe.contentWindow) {
-            showToast("Open a website or game tab first, then click Run!");
-            return;
-          }
-          try {
-            target.iframe.contentWindow.eval(code);
-            switchTab(target.id);
-            showToast("Launched " + modName + "!");
-          } catch (err) {
-            showToast("Failed to inject: " + (err.message || err));
-          }
-        },
-        toast: showToast,
-      });
-    }
-
-    if (window.IbossAdminPanel) {
-      adminPanel = window.IbossAdminPanel.create({
-        getSupabaseConfig: () => state.supabase,
-        getCurrentUserEmail: () =>
-          state.user && state.user.email ? state.user.email : "",
-        onAdminAuthenticated: () => {
-          state.isAdmin = true;
-          updateAdminCrownPill();
-          showToast("Admin Command Center unlocked");
-        },
-        reloadCustomGames: reloadCustomGames,
-        toast: showToast,
-      });
-    }
-
-    if (window.IbossScramjetEngine) {
-      scramjetEngine = window.IbossScramjetEngine.create({
-        onStatus: (st) => {
-          if (state.settings.proxyEngine === "scramjet") {
-            state.wispStatus = st;
-            updateTransportPill();
-          }
-        },
-        onRequestLog: (entry) => appendInspectorLog(entry),
-        onPopup: (_tabId, popupUrl) => {
-          createTab(popupUrl, true);
-          showToast("Opened popup in new tab");
-        },
-        onPageUpdate: (tabId, url, title) => {
-          const targetTab = state.tabs.find((t) => t.id === tabId);
-          if (!targetTab) return;
-          if (url && /^https?:\/\//i.test(url)) {
-            targetTab.url = url;
-          }
-          if (title) {
-            targetTab.title = title;
-          } else if (url && !targetTab.title) {
-            targetTab.title = getDomain(url);
-          }
-          renderTabs();
-          if (targetTab.id === state.activeTabId) {
-            updateOmniboxForTab(targetTab);
-          }
-        },
-        onSubframeKeydown: (key) => {
-          if (state.settings.panicKey && key === state.settings.panicKey) {
-            handleBossKeyActivation();
-          }
-        },
-      });
-    }
-
-    if (window.IbossWispEngine) {
-      wispEngine = window.IbossWispEngine.create({
-        onStatus: (st) => {
-          if (state.settings.proxyEngine === "wisp") {
-            state.wispStatus = st;
-            updateTransportPill();
-          }
-        },
-        onRequestLog: (entry) => appendInspectorLog(entry),
-        onNavigate: (tabId, url, newTab) => {
-          if (newTab) {
-            createTab(url, true);
-          } else {
-            const targetTab =
-              state.tabs.find((t) => t.id === tabId) || getActiveTab();
-            if (targetTab) {
-              navigateTab(targetTab, url, true);
-            }
-          }
-        },
-        onReload: (tabId) => {
-          const targetTab =
-            state.tabs.find((t) => t.id === tabId) || getActiveTab();
-          if (targetTab && targetTab.url) {
-            navigateTab(targetTab, targetTab.url, false);
-          }
-        },
-        onPageUpdate: (tabId, url, title) => {
-          const targetTab = state.tabs.find((t) => t.id === tabId);
-          if (!targetTab) return;
-          if (url) targetTab.url = url;
-          if (title) targetTab.title = title;
-          renderTabs();
-          if (targetTab.id === state.activeTabId) {
-            updateOmniboxForTab(targetTab);
-          }
-        },
-      });
-    }
-
     applyCloak();
     applyWispConfiguration();
     syncToolbarSettings();
@@ -3958,10 +4208,14 @@
       refreshGateVisibility();
 
       if (state.authenticated) {
-        if (scramjetEngine && state.settings.proxyEngine === "scramjet") {
-          scramjetEngine.ensureReady().catch(() => {});
-        } else if (wispEngine && state.settings.proxyEngine === "wisp") {
-          wispEngine.ensureConnected().catch(() => {});
+        if (state.settings.proxyEngine === "scramjet") {
+          ensureScramjetEngine()
+            .then((engine) => engine.ensureReady())
+            .catch(() => {});
+        } else if (state.settings.proxyEngine === "wisp") {
+          ensureWispEngine()
+            .then((engine) => engine.ensureConnected())
+            .catch(() => {});
         }
         if (state.user && state.user.mode === "supabase") {
           syncFromCloud(false);
@@ -4018,6 +4272,12 @@
     document.addEventListener("visibilitychange", () => {
       if (state.settings.autoCloakBlur) {
         applyCloak(document.hidden);
+      }
+      if (
+        window.IbossCineCloud &&
+        typeof window.IbossCineCloud.wakeGlobalParticleEngine === "function"
+      ) {
+        window.IbossCineCloud.wakeGlobalParticleEngine();
       }
     });
     window.addEventListener("beforeunload", (ev) => {

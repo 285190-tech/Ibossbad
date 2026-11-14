@@ -41,6 +41,7 @@
   } catch (_e) {}
 
   var particleEngineBooted = false;
+  var particleEngineWake = null;
   var particleItems = [];
   var mouseX = -999;
   var mouseY = -999;
@@ -210,6 +211,7 @@
     if (canvas) {
       rebuildParticles(canvas.width, canvas.height);
     }
+    if (particleEngineWake) particleEngineWake();
     return activeParticleMode;
   }
 
@@ -230,7 +232,19 @@
       rebuildParticles(canvas.width, canvas.height);
     }
     syncSize();
-    window.addEventListener("resize", syncSize);
+
+    var animationFrameId = null;
+    function wake() {
+      if (animationFrameId === null) {
+        animationFrameId = requestAnimationFrame(tick);
+      }
+    }
+    particleEngineWake = wake;
+    window.addEventListener("resize", function () {
+      syncSize();
+      wake();
+    });
+    document.addEventListener("visibilitychange", wake);
     window.addEventListener(
       "mousemove",
       function (ev) {
@@ -241,6 +255,7 @@
     );
 
     function tick() {
+      animationFrameId = null;
       var allowed =
         activeParticleMode !== "none" &&
         !document.hidden &&
@@ -248,7 +263,6 @@
 
       if (!allowed) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        requestAnimationFrame(tick);
         return;
       }
 
@@ -353,10 +367,10 @@
           if (p.y < 0 || p.y > h) p.vy *= -1;
         }
       }
-      requestAnimationFrame(tick);
+      animationFrameId = requestAnimationFrame(tick);
     }
 
-    requestAnimationFrame(tick);
+    wake();
   }
 
   // =========================================================================
@@ -1201,6 +1215,9 @@
     setParticleMode: setParticleMode,
     getParticleMode: getParticleMode,
     initGlobalParticleEngine: initGlobalParticleEngine,
+    wakeGlobalParticleEngine: function () {
+      if (particleEngineWake) particleEngineWake();
+    },
     renderCineCloudPage: renderCineCloudPage,
   };
 })(window);

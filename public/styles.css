@@ -1745,6 +1745,87 @@ body {
   line-height: 1.3;
   flex: 1;
 }
+.game-availability-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+  margin-top: -4px;
+}
+.game-availability-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.12);
+  color: #cbd5e1;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.game-availability-available {
+  border-color: rgba(74, 222, 128, 0.32);
+  background: rgba(34, 197, 94, 0.1);
+  color: #86efac;
+}
+.game-availability-unavailable {
+  border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+}
+.game-availability-unknown {
+  border-color: rgba(251, 191, 36, 0.28);
+  background: rgba(245, 158, 11, 0.08);
+  color: #fcd34d;
+}
+.game-availability-date {
+  color: var(--text-muted);
+  font-size: 9px;
+  line-height: 1.4;
+}
+.games-availability-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+}
+.games-availability-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.games-availability-toolbar .settings-desc {
+  margin: 3px 0 0;
+}
+.games-mirror-health {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  font-size: 11px;
+}
+.game-mirror-health {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  padding: 3px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+}
+.game-mirror-available {
+  color: #86efac;
+}
+.game-mirror-unavailable {
+  color: #fca5a5;
+}
 .game-tile-actions {
   display: flex;
   gap: 6px;

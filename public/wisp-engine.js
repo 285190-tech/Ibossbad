@@ -952,29 +952,52 @@
 
     function ensureWasmLoaded() {
       if (wasmReadyPromise) return wasmReadyPromise;
-      wasmReadyPromise = new Promise(function (resolve, reject) {
-        var attempts = 0;
-        function waitForGlobal() {
-          var lc = getLibcurl();
-          if (lc && typeof lc.load_wasm === "function") {
+
+      function waitForGlobal() {
+        return new Promise(function (resolve, reject) {
+          var attempts = 0;
+          function check() {
+            var lc = getLibcurl();
+            if (lc && typeof lc.load_wasm === "function") {
+              resolve(lc);
+              return;
+            }
+            attempts++;
+            if (attempts > 100) {
+              reject(
+                new Error("libcurl.js failed to load from /vendor/libcurl/")
+              );
+              return;
+            }
+            setTimeout(check, 60);
+          }
+          check();
+        });
+      }
+
+      var libcurlPromise = getLibcurl()
+        ? Promise.resolve(getLibcurl())
+        : typeof cb.loadLibcurl === "function"
+        ? Promise.resolve(cb.loadLibcurl()).then(function () {
+            return getLibcurl();
+          })
+        : waitForGlobal();
+
+      wasmReadyPromise = libcurlPromise
+        .then(function (lc) {
+          if (!lc || typeof lc.load_wasm !== "function") {
+            throw new Error("libcurl.js failed to initialize.");
+          }
+          return Promise.resolve(
             lc.load_wasm("/vendor/libcurl/libcurl.wasm")
-              .then(function () {
-                resolve(lc);
-              })
-              .catch(reject);
-            return;
-          }
-          attempts++;
-          if (attempts > 100) {
-            reject(
-              new Error("libcurl.js failed to load from /vendor/libcurl/")
-            );
-            return;
-          }
-          setTimeout(waitForGlobal, 60);
-        }
-        waitForGlobal();
-      });
+          ).then(function () {
+            return lc;
+          });
+        })
+        .catch(function (err) {
+          wasmReadyPromise = null;
+          throw err;
+        });
       return wasmReadyPromise;
     }
 
