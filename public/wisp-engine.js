@@ -142,6 +142,60 @@
     return false;
   }
 
+  function hostMatchesDomain(host, domain) {
+    return host === domain || host.slice(-(domain.length + 1)) === "." + domain;
+  }
+
+  function isCaptchaFrameUrl(rawUrl, baseUrl) {
+    try {
+      var url = new URL(rawUrl, baseUrl);
+      if (url.protocol !== "https:") return false;
+      var host = url.hostname.toLowerCase();
+      var pathname = url.pathname.toLowerCase();
+
+      if (
+        hostMatchesDomain(host, "google.com") ||
+        hostMatchesDomain(host, "recaptcha.net")
+      ) {
+        return pathname.indexOf("/recaptcha/") === 0;
+      }
+      if (
+        hostMatchesDomain(host, "hcaptcha.com") ||
+        hostMatchesDomain(host, "hcaptcha.net")
+      ) {
+        return pathname.indexOf("/captcha/") === 0;
+      }
+      if (host === "challenges.cloudflare.com") {
+        return pathname.indexOf("/cdn-cgi/challenge-platform/") === 0;
+      }
+      if (
+        hostMatchesDomain(host, "arkoselabs.com") ||
+        hostMatchesDomain(host, "funcaptcha.com")
+      ) {
+        return pathname.indexOf("/fc/") === 0;
+      }
+    } catch (_e) {}
+    return false;
+  }
+
+  function getCaptchaFrameProxyUrl(
+    rawUrl,
+    baseUrl,
+    buildProxyFrameUrl,
+    proxyBaseUrl
+  ) {
+    if (typeof buildProxyFrameUrl !== "function") return null;
+    try {
+      var targetUrl = new URL(rawUrl, baseUrl);
+      if (!isCaptchaFrameUrl(targetUrl.href)) return null;
+      var appOrigin = new URL(proxyBaseUrl).origin;
+      var proxiedUrl = new URL(buildProxyFrameUrl(targetUrl.href), appOrigin);
+      return proxiedUrl.origin === appOrigin ? proxiedUrl.href : null;
+    } catch (_e) {
+      return null;
+    }
+  }
+
   // AST-based JS location rewriter (same algorithm as lib/location-rewriter.js & GUST)
   function rewriteLocationRefs(src) {
     if (
@@ -1615,10 +1669,20 @@
         })
       );
 
-      // Defuse nested external iframes so they don't bypass WISP
+      // Route recognized CAPTCHA frames through the app proxy instead of loading
+      // them directly; keep all other remote frames disabled.
       doc.querySelectorAll("iframe[src]").forEach(function (ifr) {
-        var s = ifr.getAttribute("src");
-        if (s && !/^(about:|blob:|data:)/i.test(s)) {
+        var src = ifr.getAttribute("src");
+        if (!src || /^(about:|blob:|data:)/i.test(src)) return;
+        var captchaProxyUrl = getCaptchaFrameProxyUrl(
+          src,
+          finalUrl,
+          cb.buildProxyFrameUrl,
+          window.location.href
+        );
+        if (captchaProxyUrl) {
+          ifr.setAttribute("src", captchaProxyUrl);
+        } else {
           ifr.removeAttribute("src");
         }
       });
@@ -1937,5 +2001,7 @@
   window.IbossWispEngine = {
     create: createWispEngine,
     rewriteLocationRefs: rewriteLocationRefs,
+    isCaptchaFrameUrl: isCaptchaFrameUrl,
+    getCaptchaFrameProxyUrl: getCaptchaFrameProxyUrl,
   };
 })(window);
