@@ -559,6 +559,7 @@
     }
     wispEngine = window.IbossWispEngine.create({
       loadLibcurl: () => loadScriptOnce("/vendor/libcurl/libcurl.js"),
+      buildProxyFrameUrl: (url) => buildProxiedPath(url),
       onStatus: (status) => {
         if (state.settings.proxyEngine === "wisp") {
           state.wispStatus = status;
@@ -599,7 +600,7 @@
     if (wispEngine) return Promise.resolve(wispEngine);
     preconnectWispRelays();
     if (!wispEngineLoadPromise) {
-      wispEngineLoadPromise = loadScriptOnce("/ui/wisp-engine.js?v=16")
+      wispEngineLoadPromise = loadScriptOnce("/ui/wisp-engine.js?v=17")
         .then(createWispEngine)
         .catch((err) => {
           wispEngineLoadPromise = null;
