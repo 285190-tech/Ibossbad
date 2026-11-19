@@ -343,12 +343,59 @@ function queueRequestTelemetry(entry) {
   }
 }
 
+function isValidScramjetConfig(config) {
+  return Boolean(
+    config &&
+      typeof config === "object" &&
+      typeof config.prefix === "string" &&
+      config.prefix.charAt(0) === "/" &&
+      config.prefix.length > 0 &&
+      config.files &&
+      typeof config.files === "object" &&
+      typeof config.files.wasm === "string" &&
+      config.files.wasm.length > 0
+  );
+}
+
 function ensureScramjetConfig() {
+  if (isValidScramjetConfig(scramjet.config)) {
+    return Promise.resolve();
+  }
+
+  // Scramjet's loadConfig() returns early for any truthy config, even an empty
+  // object. Clear malformed state so the next load can retry its IndexedDB read.
+  if (scramjet.config) {
+    scramjet.config = undefined;
+  }
+
   if (!configLoadPromise) {
-    configLoadPromise = scramjet.loadConfig().catch(function (err) {
-      configLoadPromise = null;
-      throw err;
-    });
+    var pendingConfigLoad = Promise.resolve()
+      .then(function () {
+        return scramjet.loadConfig();
+      })
+      .then(function () {
+        if (!isValidScramjetConfig(scramjet.config)) {
+          throw new Error("Scramjet configuration is missing or invalid");
+        }
+      });
+
+    var trackedConfigLoad = pendingConfigLoad.then(
+      function () {
+        if (configLoadPromise === trackedConfigLoad) {
+          configLoadPromise = null;
+        }
+      },
+      function (err) {
+        if (!isValidScramjetConfig(scramjet.config)) {
+          scramjet.config = undefined;
+        }
+        if (configLoadPromise === trackedConfigLoad) {
+          configLoadPromise = null;
+        }
+        throw err;
+      }
+    );
+    configLoadPromise = trackedConfigLoad;
   }
   return configLoadPromise;
 }

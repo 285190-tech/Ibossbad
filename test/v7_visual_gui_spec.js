@@ -100,12 +100,54 @@ test("v7.0 Visual & GUI Overhaul: HD artwork banners, visual-art engine, Bento s
       "New Tab includes 1-click Wallpaper Switcher pill"
     );
     t.ok(
-      html.indexOf("gate-hero-art") !== -1,
-      "Auth Gate includes panoramic nebula artwork header"
+      html.indexOf('<details class="home-shortcuts">') !== -1,
+      "New Tab keeps less-used destinations in a compact disclosure"
+    );
+    t.ok(
+      html.indexOf('id="heroRandomGameBtn"') !== -1,
+      "More shortcuts retains the Surprise Game action"
+    );
+    t.ok(
+      html.indexOf('class="gate-brand-header"') !== -1 &&
+        html.indexOf("Welcome back") !== -1,
+      "Auth Gate uses a compact branded welcome header"
+    );
+    var appThemeSource = fs.readFileSync(
+      path.join(__dirname, "..", "public", "app.js"),
+      "utf8"
+    );
+    t.ok(
+      html.indexOf('option value="strawberry"') !== -1 &&
+        appThemeSource.indexOf('themePreset: "strawberry"') !== -1,
+      "Strawberry is the available default UI theme"
+    );
+    t.ok(
+      html.indexOf('class="radio-player-track"') !== -1 &&
+        html.indexOf('id="radioMiniBar"') !== -1,
+      "Background audio retains its persistent player controls"
     );
     t.ok(
       html.indexOf("/ui/visual-art.js") !== -1,
       "index.html loads /ui/visual-art.js"
+    );
+
+    var internalPagesSource = fs.readFileSync(
+      path.join(__dirname, "..", "public", "internal-pages.js"),
+      "utf8"
+    );
+    t.ok(
+      internalPagesSource.indexOf('class="internal-wrap games-hub-wrap"') !==
+        -1 && internalPagesSource.indexOf('class="games-total-label"') !== -1,
+      "Games Hub exposes a compact Strawberry-style catalog header"
+    );
+    var mediaEmulatorSource = fs.readFileSync(
+      path.join(__dirname, "..", "public", "media-emulator.js"),
+      "utf8"
+    );
+    t.ok(
+      mediaEmulatorSource.indexOf('class="internal-wrap media-hub-wrap"') !==
+        -1 && mediaEmulatorSource.indexOf("Made for you") !== -1,
+      "Music Hub leads with its radio collection and persistent player"
     );
 
     // Verify IbossVisualArt in VM sandbox
