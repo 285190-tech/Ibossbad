@@ -90,7 +90,6 @@ test("v6.0 Speed Suite: Brotli/Gzip static WASM compression, ETag 304, WISP tuni
     adminPassword: "admin",
     autoLoadSupabase: false,
     skipInternetProbe: true,
-    wispAllowLoopback: true,
   });
 
   var server = http.createServer(instance.app);

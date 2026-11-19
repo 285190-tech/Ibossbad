@@ -103,6 +103,8 @@ test("Game availability API checks mirror games through configured fallbacks", a
       adminPassword: "catalog-admin",
       autoLoadSupabase: false,
       skipInternetProbe: true,
+      // Intentional local fixture: allow private targets only for this test mirror.
+      allowPrivateMggTargets: true,
       mggMirrors: [
         "http://127.0.0.1:" + primary.address().port + "/",
         "http://127.0.0.1:" + fallback.address().port + "/",

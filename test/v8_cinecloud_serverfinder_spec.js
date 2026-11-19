@@ -121,6 +121,8 @@ test("v8.0: /mgg-games/ direct mirror, broken CNAME healing, binary WISP server 
     adminPassword: "admin",
     autoLoadSupabase: false,
     skipInternetProbe: true,
+    // Intentional local HTTP mirror fixture; production MGG targets stay public-only.
+    allowPrivateMggTargets: true,
     mggUpstreamBaseUrl: "http://127.0.0.1:" + mockPort,
     mggFallbackBaseUrl: "http://127.0.0.1:" + mockPort,
   });
