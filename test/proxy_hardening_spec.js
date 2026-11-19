@@ -4,6 +4,7 @@ var fs = require("fs");
 var path = require("path");
 var http = require("http");
 var https = require("https");
+var net = require("net");
 var WebSocket = require("ws");
 var test = require("tap").test;
 // eslint-disable-next-line node/no-missing-require
@@ -69,6 +70,126 @@ function requestProxy(port, upstreamPort, protocol, hostname) {
       upstreamPort +
       "/tls-check"
   );
+}
+
+function requestProxyWebSocket(proxyPort, targetPort, hostname) {
+  return new Promise(function (resolve) {
+    var settled = false;
+    var ws = new WebSocket(
+      "ws://127.0.0.1:" +
+        proxyPort +
+        "/proxy/http://" +
+        (hostname || "127.0.0.1") +
+        ":" +
+        targetPort +
+        "/socket"
+    );
+    var timer = setTimeout(function () {
+      finish({ status: 0, opened: false });
+    }, 3000);
+
+    function finish(result) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (ws.readyState !== WebSocket.CLOSED) ws.terminate();
+      resolve(result);
+    }
+
+    ws.once("unexpected-response", function (_req, res) {
+      res.resume();
+      finish({ status: res.statusCode, opened: false });
+    });
+    ws.once("open", function () {
+      finish({ status: 101, opened: true });
+    });
+    ws.once("error", function () {
+      finish({ status: 0, opened: false });
+    });
+    ws.once("close", function () {
+      finish({ status: 0, opened: false });
+    });
+  });
+}
+
+function decodeWispFrame(frame) {
+  return wispPkg.packet.WispPacket.parse_all(
+    new wispPkg.packet.WispBuffer(new Uint8Array(frame))
+  );
+}
+
+function createWispConnectPacket(streamId, hostname, port) {
+  return new wispPkg.packet.WispPacket({
+    type: wispPkg.packet.packet_types.CONNECT,
+    stream_id: streamId,
+    payload: new wispPkg.packet.ConnectPayload({
+      stream_type: wispPkg.packet.stream_types.TCP,
+      port: port,
+      hostname: hostname,
+    }),
+  }).serialize().bytes;
+}
+
+function openWispClient(port) {
+  return new Promise(function (resolve, reject) {
+    var ws = new WebSocket("ws://127.0.0.1:" + port + "/wisp/");
+    var timer = setTimeout(function () {
+      ws.terminate();
+      reject(new Error("Timed out waiting for the Wisp handshake."));
+    }, 3000);
+
+    ws.on("message", function (frame) {
+      var packet;
+      try {
+        packet = decodeWispFrame(frame);
+      } catch (_err) {
+        return;
+      }
+      if (
+        packet.type === wispPkg.packet.packet_types.CONTINUE &&
+        packet.stream_id === 0
+      ) {
+        clearTimeout(timer);
+        resolve(ws);
+      }
+    });
+    ws.once("error", function (err) {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+}
+
+function waitForWispClose(ws, streamId) {
+  return new Promise(function (resolve, reject) {
+    var timer = setTimeout(function () {
+      ws.removeListener("message", onMessage);
+      reject(new Error("Timed out waiting for a Wisp stream close packet."));
+    }, 3000);
+
+    function onMessage(frame) {
+      var packet;
+      try {
+        packet = decodeWispFrame(frame);
+      } catch (_err) {
+        return;
+      }
+      if (
+        packet.type === wispPkg.packet.packet_types.CLOSE &&
+        packet.stream_id === streamId
+      ) {
+        clearTimeout(timer);
+        ws.removeListener("message", onMessage);
+        resolve(packet.payload.reason);
+      }
+    }
+    ws.on("message", onMessage);
+    ws.once("error", function (err) {
+      clearTimeout(timer);
+      ws.removeListener("message", onMessage);
+      reject(err);
+    });
+  });
 }
 
 function createProxyServer(options) {
@@ -271,6 +392,26 @@ test("legacy proxy and safe downloads reject private destinations by default", a
       "blocked WebSocket upgrade never reaches the private origin"
     );
 
+    var blockedHostnameWebSocket = await requestProxyWebSocket(
+      blockedServer.address().port,
+      target.address().port,
+      "localhost"
+    );
+    t.equal(
+      blockedHostnameWebSocket.status,
+      403,
+      "hostname-based WebSocket upgrades reject private DNS answers"
+    );
+    t.notOk(
+      blockedHostnameWebSocket.opened,
+      "private hostname WebSocket never completes its upgrade"
+    );
+    t.equal(
+      targetWebSocketHits,
+      0,
+      "private hostname WebSocket never reaches the private origin"
+    );
+
     var blockedHostname = await requestProxy(
       blockedServer.address().port,
       target.address().port,
@@ -314,6 +455,66 @@ test("legacy proxy and safe downloads reject private destinations by default", a
     await Promise.all([
       close(blockedServer),
       close(compatibleServer),
+      close(target),
+    ]);
+  }
+});
+
+test("MGG mirrors filter and pin public DNS by default", async function (t) {
+  var targetHits = 0;
+  var target = http.createServer(function (_req, res) {
+    targetHits++;
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end("private mirror fixture");
+  });
+  var blockedServer = null;
+  var trustedFixtureServer = null;
+
+  try {
+    await listen(target);
+    blockedServer = createProxyServer({
+      mggMirrors: ["http://localhost:" + target.address().port + "/"],
+    });
+    trustedFixtureServer = createProxyServer({
+      mggMirrors: ["http://127.0.0.1:" + target.address().port + "/"],
+      allowPrivateMggTargets: true,
+    });
+    await Promise.all([listen(blockedServer), listen(trustedFixtureServer)]);
+
+    var blockedResponse = await requestPath(
+      blockedServer.address().port,
+      "/mgg-games/fixture/"
+    );
+    t.equal(
+      blockedResponse.status,
+      502,
+      "default MGG mirror rejects a hostname that resolves privately"
+    );
+    t.equal(
+      targetHits,
+      0,
+      "blocked MGG request never reaches the local mirror"
+    );
+
+    var fixtureResponse = await requestPath(
+      trustedFixtureServer.address().port,
+      "/mgg-games/fixture/"
+    );
+    t.equal(
+      fixtureResponse.status,
+      200,
+      "trusted test fixtures can explicitly opt into private MGG targets"
+    );
+    t.equal(fixtureResponse.body, "private mirror fixture");
+    t.equal(
+      targetHits,
+      1,
+      "only the explicit fixture opt-in reaches the mirror"
+    );
+  } finally {
+    await Promise.all([
+      close(blockedServer),
+      close(trustedFixtureServer),
       close(target),
     ]);
   }
@@ -441,4 +642,116 @@ test("Wisp relay stream limits are bounded by default and configurable", functio
   }
 
   t.end();
+});
+
+test("self-hosted Wisp filters and pins destination addresses", async function (t) {
+  var targetHits = 0;
+  var target = net.createServer(function (socket) {
+    targetHits++;
+    socket.end();
+  });
+  var relay = createProxyServer();
+  var ws = null;
+
+  try {
+    await Promise.all([listen(target), listen(relay)]);
+    t.equal(
+      wispPkg.server.options.allow_private_ips,
+      false,
+      "self-hosted Wisp denies private IPs"
+    );
+    t.equal(
+      wispPkg.server.options.allow_loopback_ips,
+      false,
+      "self-hosted Wisp denies loopback IPs"
+    );
+    t.equal(
+      typeof wispPkg.server.options.dns_method,
+      "function",
+      "self-hosted Wisp uses the filtered DNS resolver"
+    );
+
+    ws = await openWispClient(relay.address().port);
+    var literalClose = waitForWispClose(ws, 1);
+    ws.send(createWispConnectPacket(1, "127.0.0.1", target.address().port));
+    t.equal(
+      await literalClose,
+      wispPkg.packet.close_reasons.HostBlocked,
+      "Wisp blocks a private IP-literal stream"
+    );
+
+    var hostnameClose = waitForWispClose(ws, 2);
+    ws.send(createWispConnectPacket(2, "localhost", target.address().port));
+    t.equal(
+      await hostnameClose,
+      wispPkg.packet.close_reasons.NetworkError,
+      "Wisp rejects a hostname whose DNS answers are private"
+    );
+    t.equal(
+      targetHits,
+      0,
+      "blocked Wisp streams never reach the private origin"
+    );
+  } finally {
+    if (ws && ws.readyState !== WebSocket.CLOSED) ws.terminate();
+    await Promise.all([close(relay), close(target)]);
+  }
+});
+
+test("private service and webhook URLs are blocked, and custom proxy agents need explicit trust", async function (t) {
+  var targetHits = 0;
+  var target = http.createServer(function (_req, res) {
+    targetHits++;
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end("{}");
+  });
+  var rejectedAgent = new http.Agent();
+  var trustedAgent = new http.Agent();
+
+  try {
+    await listen(target);
+    var serviceUrl = "http://127.0.0.1:" + target.address().port;
+    var app = createApp({
+      autoLoadSupabase: true,
+      skipInternetProbe: true,
+      supabaseUrl: serviceUrl,
+      supabaseAnonKey: "test-key",
+    });
+    app.adminManager.state.discordWebhookUrl = serviceUrl + "/webhook";
+    app.adminManager.sendDiscordAlert("SSRF test", "test alert", 123);
+
+    t.throws(
+      function () {
+        createApp({
+          autoLoadSupabase: false,
+          skipInternetProbe: true,
+          httpAgent: rejectedAgent,
+        });
+      },
+      /trustCustomProxyAgents/,
+      "rejects an injected agent unless its egress policy is explicitly trusted"
+    );
+    rejectedAgent.destroy();
+
+    var trustedApp = createApp({
+      autoLoadSupabase: false,
+      skipInternetProbe: true,
+      httpAgent: trustedAgent,
+      trustCustomProxyAgents: true,
+    });
+    t.ok(trustedApp, "allows an explicitly trusted custom proxy agent");
+
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 50);
+    });
+    t.equal(
+      targetHits,
+      0,
+      "Supabase and admin webhook requests do not reach private service URLs"
+    );
+  } finally {
+    rejectedAgent.destroy();
+    trustedAgent.destroy();
+    await close(target);
+  }
 });
