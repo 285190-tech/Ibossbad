@@ -7,17 +7,17 @@
     {
       id: "nebula",
       label: "Cosmic Nebula",
-      src: "/ui/assets/hero-nebula.jpg",
+      src: "/ui/assets/hero-nebula.webp",
     },
     {
       id: "liquid",
       label: "Liquid Sapphire",
-      src: "/ui/assets/banner-desktop.jpg",
+      src: "/ui/assets/banner-desktop.webp",
     },
     {
       id: "cybercity",
       label: "Neon City",
-      src: "/ui/assets/banner-cybercity.jpg",
+      src: "/ui/assets/banner-cybercity.webp",
     },
     {
       id: "minimal",
@@ -27,16 +27,16 @@
   ];
 
   var BANNERS = {
-    hero: "/ui/assets/hero-nebula.jpg",
-    games: "/ui/assets/banner-games.jpg",
-    media: "/ui/assets/banner-media.jpg",
-    emulator: "/ui/assets/banner-emulator.jpg",
-    desktop: "/ui/assets/banner-desktop.jpg",
-    cybercity: "/ui/assets/banner-cybercity.jpg",
-    action: "/ui/assets/cat-action.jpg",
-    racing: "/ui/assets/cat-racing.jpg",
-    sandbox: "/ui/assets/cat-sandbox.jpg",
-    puzzle: "/ui/assets/cat-puzzle.jpg",
+    hero: "/ui/assets/hero-nebula.webp",
+    games: "/ui/assets/banner-games.webp",
+    media: "/ui/assets/banner-media.webp",
+    emulator: "/ui/assets/banner-emulator.webp",
+    desktop: "/ui/assets/banner-desktop.webp",
+    cybercity: "/ui/assets/banner-cybercity.webp",
+    action: "/ui/assets/cat-action.webp",
+    racing: "/ui/assets/cat-racing.webp",
+    sandbox: "/ui/assets/cat-sandbox.webp",
+    puzzle: "/ui/assets/cat-puzzle.webp",
   };
 
   var CATEGORY_PHOTO_MAP = {

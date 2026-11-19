@@ -239,7 +239,7 @@
       container.innerHTML =
         '<div class="internal-wrap media-hub-wrap">' +
         '<div class="hub-visual-hero media-hub-hero">' +
-        '<img src="/ui/assets/banner-media.jpg" alt="" class="hub-hero-bg" />' +
+        '<img src="/ui/assets/banner-media.webp" alt="" class="hub-hero-bg" />' +
         '<div class="hub-hero-scrim"></div>' +
         '<div class="hub-hero-body"><div>' +
         '<span class="bento-kicker">MUSIC · BROWSE &amp; LISTEN</span>' +
@@ -262,7 +262,7 @@
             esc(st.name) +
             '">' +
             '<div class="radio-card-thumb">' +
-            '<img src="/ui/assets/banner-media.jpg" alt="" loading="lazy" style="filter:hue-rotate(' +
+            '<img src="/ui/assets/banner-media.webp" alt="" loading="lazy" style="filter:hue-rotate(' +
             hue +
             'deg)" />' +
             '<div class="eq-bars" aria-hidden="true"><i></i><i></i><i></i><i></i></div>' +
@@ -295,7 +295,7 @@
             esc(m.url) +
             '">' +
             '<div class="game-cover-banner">' +
-            '<img src="/ui/assets/banner-media.jpg" alt="" loading="lazy" class="game-cover-photo" style="filter:hue-rotate(' +
+            '<img src="/ui/assets/banner-media.webp" alt="" loading="lazy" class="game-cover-photo" style="filter:hue-rotate(' +
             ((idx * 38) % 360) +
             'deg)" />' +
             '<div class="game-cover-scrim"></div>' +
@@ -429,7 +429,7 @@
       container.innerHTML =
         '<div class="internal-wrap" style="max-width:1160px">' +
         '<div class="hub-visual-hero">' +
-        '<img src="/ui/assets/banner-emulator.jpg" alt="" class="hub-hero-bg" />' +
+        '<img src="/ui/assets/banner-emulator.webp" alt="" class="hub-hero-bg" />' +
         '<div class="hub-hero-scrim"></div>' +
         '<div class="hub-hero-body">' +
         "<div>" +

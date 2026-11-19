@@ -78,6 +78,32 @@ test("v7.0 Visual & GUI Overhaul: HD artwork banners, visual-art engine, Bento s
       );
     }
 
+    for (var j = 0; j < expectedAssets.length; j++) {
+      var webpPath = expectedAssets[j].replace(/\.jpg$/, ".webp");
+      var webp = await rawGet(port, webpPath);
+      var jpeg = await rawGet(port, expectedAssets[j]);
+      t.equal(webp.status, 200, "Serves optimized artwork " + webpPath);
+      t.equal(
+        webp.headers["content-type"],
+        "image/webp",
+        "Uses WebP MIME type"
+      );
+      t.equal(
+        webp.body.toString("ascii", 0, 4),
+        "RIFF",
+        "WebP has RIFF header"
+      );
+      t.equal(
+        webp.body.toString("ascii", 8, 12),
+        "WEBP",
+        "WebP has image signature"
+      );
+      t.ok(
+        webp.body.length < jpeg.body.length,
+        "WebP is smaller than original JPEG"
+      );
+    }
+
     var jojoCoverRes = await rawGet(
       port,
       "/ui/assets/game-covers/jojo-s-bizarre-adventure-heritage-for-the-future.webp"
@@ -260,7 +286,7 @@ test("v7.0 Visual & GUI Overhaul: HD artwork banners, visual-art engine, Bento s
     });
     t.equal(
       mcCover.photo,
-      "/ui/assets/cat-sandbox.jpg",
+      "/ui/assets/cat-sandbox.webp",
       "Maps sandbox games to voxel sandbox artwork"
     );
     t.ok(

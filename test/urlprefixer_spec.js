@@ -231,3 +231,33 @@ test("should correctly handle packets split at different locations", function (t
 });
 
 // todo: add tests for javascript (?)
+
+test("URL-free text fast path preserves unicode and existing rewrites", function (t) {
+  var plain = "Text without URLs 🌟 — quoted 'words' and punctuation. ".repeat(
+    400
+  );
+  t.equal(
+    urlPrefix.rewriteUrls(plain, testUri, testPrefix),
+    plain,
+    "plain text is unchanged"
+  );
+  var examples = {
+    '<a href="HTTPS://example.com/a">':
+      '<a href="/proxy/HTTPS://example.com/a">',
+    '<img src="/image.png">':
+      '<img src="/proxy/http://localhost:8081/image.png">',
+    ' integrity="sha256-test"': ' data-unblocker-integrity="sha256-test"',
+    '<html xmlns="/proxy/http://example.com">':
+      '<html xmlns="http://example.com">',
+    '<!DOCTYPE html PUBLIC "/proxy/http://example.com">':
+      '<!DOCTYPE html PUBLIC "http://example.com">',
+  };
+  Object.keys(examples).forEach(function (source) {
+    t.equal(
+      urlPrefix.rewriteUrls(source, testUri, testPrefix),
+      examples[source],
+      "marker still invokes rewrite: " + source
+    );
+  });
+  t.end();
+});

@@ -553,7 +553,7 @@
       container.innerHTML =
         '<div class="internal-wrap games-hub-wrap">' +
         '<div class="hub-visual-hero games-hub-hero">' +
-        '<img src="/ui/assets/banner-games.jpg" alt="" class="hub-hero-bg" />' +
+        '<img src="/ui/assets/banner-games.webp" alt="" class="hub-hero-bg" />' +
         '<div class="hub-hero-scrim"></div>' +
         '<div class="hub-hero-body">' +
         "<div>" +
@@ -1615,7 +1615,7 @@
       container.innerHTML =
         '<div class="internal-wrap">' +
         '<div class="hub-visual-hero">' +
-        '<img src="/ui/assets/banner-cybercity.jpg" alt="" class="hub-hero-bg" />' +
+        '<img src="/ui/assets/banner-cybercity.webp" alt="" class="hub-hero-bg" />' +
         '<div class="hub-hero-scrim"></div>' +
         '<div class="hub-hero-body">' +
         "<div>" +
@@ -2130,7 +2130,7 @@
       var loadPromise = Promise.resolve();
       if (!window.IbossCineCloud) {
         loadPromise = loadPromise.then(function () {
-          return hooks.loadScript("/ui/cine-cloud.js?v=16");
+          return hooks.loadScript("/ui/cine-cloud.js?v=17");
         });
       }
       if (!Array.isArray(window.IBOSS_CINE_CLOUD_CATALOG)) {

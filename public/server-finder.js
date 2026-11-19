@@ -4,7 +4,7 @@
 (function (window) {
   var CUSTOM_SERVERS_KEY = "ibossbad.customWispServers.v1";
   var STICKY_WID_KEY = "ibossbad.wispWid.v2";
-  var LAST_SCAN_CACHE_KEY = "ibossbad.wispScanResults.v2";
+  var LAST_SCAN_CACHE_KEY = "ibossbad.wispScanResults.v3";
 
   // Combined 20-server unblocked WISP relay pool:
   // Universal WISP v1 relays first (compatible with both libcurl & epoxy),
@@ -300,8 +300,9 @@
 
   /**
    * Authentic Binary WISP v1/v2 Wire-Protocol Handshake Verifier
-   * Speaks real stream-0 WISP_INFO (0x05) / WISP_CONTINUE (0x03) + stream-ID WISP_CONNECT (0x01)
-   * so school MITM block pages or dead reverse proxies can never spoof a working server.
+   * Checks that a relay can return an HTTP response from a public origin, not
+   * merely that its WebSocket is open or that it rejects a stream. This tests
+   * one destination and does not guarantee other origins or TLS will work.
    */
   function probeWispHandshake(rawUrl, timeoutMs) {
     var url = normalizeWispUrl(rawUrl);
@@ -317,6 +318,7 @@
       var sentConnect = false;
       var sawV2 = false;
       var connectAt = 0;
+      var responsePrefix = "";
       var openAt = performance.now();
       var streamId = (Math.floor(Math.random() * 4294967294) + 1) >>> 0;
 
@@ -371,14 +373,31 @@
         var pktStreamId = view.getUint32(1, true);
 
         if (sentConnect) {
-          if (pktStreamId === streamId) {
-            var rtt = Math.max(1, Math.round(performance.now() - connectAt));
-            finish({
-              ok: true,
-              url: url,
-              latencyMs: rtt,
-              protocol: sawV2 ? "WISP v2" : "WISP v1",
-            });
+          if (pktStreamId !== streamId) return;
+          if (pktType === 4) {
+            finish({ ok: false, url: url, latencyMs: null, protocol: null });
+          } else if (pktType === 2) {
+            var bytes = new Uint8Array(data, 5);
+            for (
+              var i = 0;
+              i < bytes.length && responsePrefix.length < 12;
+              i++
+            ) {
+              responsePrefix += String.fromCharCode(bytes[i]);
+            }
+            if (/^HTTP\/1\.[01] \d{3}/.test(responsePrefix)) {
+              finish({
+                ok: true,
+                url: url,
+                latencyMs: Math.max(
+                  1,
+                  Math.round(performance.now() - connectAt)
+                ),
+                protocol: sawV2 ? "WISP v2" : "WISP v1",
+              });
+            } else if (responsePrefix.length >= 12) {
+              finish({ ok: false, url: url, latencyMs: null, protocol: null });
+            }
           }
           return;
         }
@@ -391,23 +410,36 @@
               ws.send(new Uint8Array([5, 0, 0, 0, 0, 2, 1]));
             } catch (_e2) {}
           } else if (pktType === 3) {
-            // WISP_CONTINUE on stream 0 -> send WISP_CONNECT probe to 127.0.0.1:69
-            var hostBytes =
-              typeof TextEncoder !== "undefined"
-                ? new TextEncoder().encode("127.0.0.1")
-                : new Uint8Array([49, 50, 55, 46, 48, 46, 48, 46, 49]);
+            // A small HTTP request provides evidence of actual origin traffic.
+            // Plain HTTP avoids requiring a TLS implementation in the scanner.
+            var host = "github.com";
+            var hostBytes = new Uint8Array(
+              Array.from(host, function (c) {
+                return c.charCodeAt(0);
+              })
+            );
             var pkt = new Uint8Array(8 + hostBytes.length);
-            pkt[0] = 1; // WISP_CONNECT
+            pkt[0] = 1;
             var dv = new DataView(pkt.buffer);
             dv.setUint32(1, streamId, true);
-            pkt[5] = 1; // STREAM_TYPE_TCP
-            pkt[6] = 69; // port 69 LE low byte
-            pkt[7] = 0; // port 69 LE high byte
+            pkt[5] = 1; // TCP
+            dv.setUint16(6, 80, true);
             pkt.set(hostBytes, 8);
+            var request =
+              "HEAD / HTTP/1.1\r\nHost: " +
+              host +
+              "\r\nConnection: close\r\n\r\n";
+            var dataPacket = new Uint8Array(5 + request.length);
+            dataPacket[0] = 2;
+            new DataView(dataPacket.buffer).setUint32(1, streamId, true);
+            for (var j = 0; j < request.length; j++) {
+              dataPacket[5 + j] = request.charCodeAt(j);
+            }
             sentConnect = true;
             connectAt = performance.now() || openAt;
             try {
               ws.send(pkt);
+              ws.send(dataPacket);
             } catch (_e3) {
               finish({ ok: false, url: url, latencyMs: null, protocol: null });
             }
@@ -723,7 +755,7 @@
       container.innerHTML =
         '<div class="internal-page">' +
         '<div class="hub-visual-hero">' +
-        '<img src="/ui/assets/banner-cybercity.jpg" alt="" class="hub-hero-bg" />' +
+        '<img src="/ui/assets/banner-cybercity.webp" alt="" class="hub-hero-bg" />' +
         '<div class="hub-hero-scrim"></div>' +
         '<div class="hub-hero-body">' +
         "<div>" +
