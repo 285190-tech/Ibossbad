@@ -347,7 +347,7 @@
           "Service Workers are disabled in this browser context."
         );
       }
-      var reg = await navigator.serviceWorker.register("/sw.js?v=12", {
+      var reg = await navigator.serviceWorker.register("/sw.js?v=13", {
         scope: "/",
         updateViaCache: "none",
       });

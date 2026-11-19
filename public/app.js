@@ -563,7 +563,7 @@
       scramjetEngineLoadPromise = Promise.all([
         loadScriptOnce("/scram/scramjet.all.js"),
         loadScriptOnce("/baremux/index.js"),
-        loadScriptOnce("/ui/scramjet-engine.js?v=20"),
+        loadScriptOnce("/ui/scramjet-engine.js?v=21"),
       ])
         .then(createScramjetEngine)
         .catch((err) => {

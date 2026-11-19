@@ -428,6 +428,20 @@ test("v8.0: /mgg-games/ direct mirror, broken CNAME healing, binary WISP server 
               if (nextScramjetBehavior === "throw") {
                 return Promise.reject(new Error("BareMux port disconnected"));
               }
+              if (nextScramjetBehavior === "encoded-error") {
+                var script =
+                  "errorTrace.value = " +
+                  JSON.stringify("Error: TLS handshake failed") +
+                  ";";
+                return Promise.resolve(
+                  new swCtx.Response(
+                    'There was an error loading<script src="data:application/javascript,' +
+                      encodeURIComponent(script) +
+                      '"></script>',
+                    { status: 500 }
+                  )
+                );
+              }
               return Promise.resolve(
                 new swCtx.Response(
                   "Uh oh! There was an error loading http://example.com\nMessage: Request failed with error code 52: Server returned nothing",
@@ -661,6 +675,16 @@ test("v8.0: /mgg-games/ direct mirror, broken CNAME healing, binary WISP server 
       err52Res.status,
       200,
       "SW intercepts Scramjet 500 error code 52 page and returns 200 Smart Recovery card"
+    );
+
+    nextScramjetBehavior = "encoded-error";
+    var detailedResponse = await requestScramjetNavigation(
+      "https://ibossbad.onrender.com/scramjet/https%3A%2F%2Fexample.com%2F"
+    );
+    t.match(
+      await detailedResponse.text(),
+      /Error: TLS handshake failed/,
+      "navigation recovery surfaces the real encoded Scramjet error"
     );
 
     // Verify root index.html includes v8.0 Cine-Cloud & Server Finder UI hooks

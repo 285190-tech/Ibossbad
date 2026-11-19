@@ -743,6 +743,31 @@ function escapeRecoveryHtml(str) {
     .replace(/"/g, "&quot;");
 }
 
+// Scramjet 1.1 puts its error trace in a URL-encoded data script, not in a
+// literal "Message:" field. Read the JSON string only; never execute the page.
+function extractScramjetError(page) {
+  const legacy = page.match(/Message:\s*([^\n<]+)/i);
+  if (legacy) return legacy[1].trim().slice(0, 500);
+  const script = page.match(
+    /<script\b[^>]*\bsrc\s*=\s*"data:application\/javascript,([^"]{1,131072})"/i
+  );
+  if (!script) return "Scramjet did not provide error details";
+  try {
+    const code = decodeURIComponent(script[1]);
+    const assignment = code.match(
+      /\berrorTrace\.value\s*=\s*("(?:\\.|[^"\\])*")\s*;/
+    );
+    if (!assignment) return "Scramjet did not provide error details";
+    const trace = JSON.parse(assignment[1]);
+    if (typeof trace !== "string" || !trace.trim()) {
+      return "Scramjet did not provide error details";
+    }
+    return trace.split(/\r?\n/, 1)[0].trim().slice(0, 500);
+  } catch (_e) {
+    return "Scramjet did not provide error details";
+  }
+}
+
 function buildSmartRecoveryResponse(targetUrl, rawError) {
   const safeUrl = targetUrl || "";
   const httpsCandidate = /^http:\/\//i.test(safeUrl)
@@ -778,9 +803,9 @@ function buildSmartRecoveryResponse(targetUrl, rawError) {
     ".btn-primary{background:#6366f1;border-color:#818cf8;color:#fff}" +
     ".btn:hover{filter:brightness(1.1)}" +
     "</style></head><body><div class='card'>" +
-    "<div class='badge'>⚠️ Upstream Connection Reset</div>" +
+    "<div class='badge'>⚠️ Proxy Connection Error</div>" +
     "<h1>Could not reach target page</h1>" +
-    "<p>The destination website or current WISP relay closed the connection. Retry below, switch to another unblocked WISP server, or open via the direct Stream engine.</p>" +
+    "<p>The proxy could not load this page. Retry below, switch WISP servers, or open via the direct Stream engine.</p>" +
     "<code>" +
     escapeRecoveryHtml(
       (safeUrl ? safeUrl + " — " : "") +
@@ -929,8 +954,7 @@ async function handleScramjetFetch(event) {
           peekText.indexOf("There was an error loading") !== -1 ||
           peekText.indexOf("Request failed with error code") !== -1
         ) {
-          const msgMatch = peekText.match(/Message:\s*([^\n<]+)/i);
-          errSnippet = msgMatch ? msgMatch[1].trim() : "Relay transport error";
+          errSnippet = extractScramjetError(peekText);
           return buildSmartRecoveryResponse(targetUrl, errSnippet);
         }
       } catch (_e2) {}
