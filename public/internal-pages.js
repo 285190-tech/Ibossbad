@@ -551,15 +551,17 @@
         : '<span class="game-availability-date">Mirror status will appear after a check.</span>';
 
       container.innerHTML =
-        '<div class="internal-wrap">' +
-        '<div class="hub-visual-hero">' +
+        '<div class="internal-wrap games-hub-wrap">' +
+        '<div class="hub-visual-hero games-hub-hero">' +
         '<img src="/ui/assets/banner-games.jpg" alt="" class="hub-hero-bg" />' +
         '<div class="hub-hero-scrim"></div>' +
         '<div class="hub-hero-body">' +
         "<div>" +
-        '<span class="bento-kicker">🎮 207+ HTML5, WebGL &amp; Ruffle Flash Titles · Instant SW Cache</span>' +
-        "<h1>Games &amp; Apps Arcade</h1>" +
-        "<p>Open game details, keep favorites, hide titles you do not want, or launch a floating mini-window.</p>" +
+        '<span class="bento-kicker">The games library</span>' +
+        '<div class="games-hub-title-row"><h1>Games</h1><span class="games-total-label">' +
+        (allCatalog.length - hiddenCatalogCount) +
+        " games</span></div>" +
+        "<p>Search the library, filter by category, and jump back into a favorite.</p>" +
         "</div>" +
         '<div class="games-header-actions" style="display:flex;gap:8px;flex-wrap:wrap">' +
         (pads.length
@@ -592,7 +594,7 @@
           : "") +
         '<div class="games-toolbar">' +
         '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
-        '<input type="text" id="gamesSearchInput" class="field-input games-search-input" style="flex:1;min-width:220px" placeholder="Search 200+ games &amp; aliases (e.g. btd5, mc, 1v1, slope, retro bowl, fnf)..." value="' +
+        '<input type="text" id="gamesSearchInput" class="field-input games-search-input" style="flex:1;min-width:220px" placeholder="Search games..." value="' +
         esc(activeGameQuery) +
         '" />' +
         '<select id="gamesSortSelect" class="field-select" style="width:auto;min-width:155px" aria-label="Sort games">' +

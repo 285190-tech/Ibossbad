@@ -55,11 +55,16 @@ Configure production credentials via environment variables (never commit live se
 | `PASSCODE`          | Site access gate passcode (set empty string `""` to disable passcode gate)              |
 | `ADMIN_PASSWORD`    | Administrator password for `iboss://admin` and Admin Gate recovery                      |
 | `SESSION_SECRET`    | HMAC secret used to sign session and admin cookies                                      |
+| `PROXY_STRICT_SSL`  | Verifies origin TLS certificates on the legacy `/proxy/` route by default; set to `false` only when intentionally accepting invalid certificates |
+| `WISP_STREAM_LIMIT_TOTAL` | Maximum open streams per Wisp WebSocket (default: 256; must be a positive integer) |
+| `WISP_STREAM_LIMIT_PER_HOST` | Maximum open streams to one host per Wisp WebSocket (default: 64; must be a positive integer) |
 | `ADMIN_EMAILS`      | Optional comma-separated list of Supabase account emails granted permanent `ADMIN` role |
 | `SUPABASE_URL`      | Optional Supabase project URL for cloud sync & persistent admin store                   |
 | `SUPABASE_ANON_KEY` | Optional Supabase publishable/anon key                                                  |
 | `MGG_MIRRORS`       | Optional comma-separated ordered HTTP(S) mirror base URLs; first is primary, later entries are fallbacks (defaults to the bundled GitHub Raw, jsDelivr, and GitHub API mirrors) |
 | `GAME_AVAILABILITY_INTERVAL_MS` | Interval for the server-side mirror catalog sweep (default: 86,400,000 ms / 24 hours) |
+
+The legacy `/proxy/` route, `/api/safe-download`, and external game-availability checks only connect to public unicast IP addresses by default. DNS answers are filtered, and the selected address is pinned for the request to prevent a second lookup from reaching a different target. For trusted local development only, `createApp({ allowPrivateProxyTargets: true })` permits LAN destinations through the legacy `/proxy/` route; do not enable it on a public instance. Safe downloads remain public-only.
 
 ## License
 

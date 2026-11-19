@@ -164,6 +164,8 @@
       var bar = document.getElementById("radioMiniBar");
       var lbl = document.getElementById("radioNowPlaying");
       var toggleBtn = document.getElementById("radioPlayPauseBtn");
+      var liveIndicator = bar && bar.querySelector(".radio-live-indicator");
+      var liveLabel = bar && bar.querySelector(".radio-live-label");
       if (!bar) return;
       if (!currentStationTitle) {
         bar.classList.add("hidden");
@@ -171,7 +173,16 @@
       }
       bar.classList.remove("hidden");
       if (lbl) lbl.textContent = "🎵 " + currentStationTitle;
-      if (toggleBtn) toggleBtn.textContent = isBgPlaying ? "Pause" : "Play";
+      if (toggleBtn) {
+        toggleBtn.textContent = isBgPlaying ? "Pause" : "Resume";
+        toggleBtn.setAttribute(
+          "aria-label",
+          isBgPlaying ? "Pause background radio" : "Resume background radio"
+        );
+      }
+      if (liveIndicator)
+        liveIndicator.classList.toggle("is-paused", !isBgPlaying);
+      if (liveLabel) liveLabel.textContent = isBgPlaying ? "LIVE" : "PAUSED";
     }
 
     function playRadioStream(url, title) {
@@ -226,32 +237,18 @@
 
     function renderMediaPage(container) {
       container.innerHTML =
-        '<div class="internal-wrap">' +
-        '<div class="hub-visual-hero">' +
+        '<div class="internal-wrap media-hub-wrap">' +
+        '<div class="hub-visual-hero media-hub-hero">' +
         '<img src="/ui/assets/banner-media.jpg" alt="" class="hub-hero-bg" />' +
         '<div class="hub-hero-scrim"></div>' +
         '<div class="hub-hero-body"><div>' +
-        '<span class="bento-kicker">🎬 Cinema &amp; Persistent Audio Studio</span>' +
-        "<h1>Media, Ad-Free YouTube &amp; Radio Hub</h1>" +
-        "<p>Bypass YouTube bot-checks via privacy frontends, play persistent background study/gaming radio, or launch streaming apps.</p>" +
+        '<span class="bento-kicker">MUSIC · BROWSE &amp; LISTEN</span>' +
+        "<h1>Music</h1>" +
+        "<p>Radio, playlists, and listening apps. Keep the music going as you browse.</p>" +
         "</div></div></div>" +
-        '<div class="internal-panel" style="margin-bottom:18px">' +
-        "<h3>Smart Ad-Free YouTube &amp; Video Launcher</h3>" +
-        '<p class="settings-desc">Paste any YouTube link, video ID, or search query to watch ad-free without datacenter bot blocks.</p>' +
-        '<div class="req-grid" style="margin-top:10px">' +
-        '<input id="ytSmartInput" type="text" class="field-input" placeholder="Paste youtube.com/watch?v=... or search term..." style="grid-column:span 2" />' +
-        '<select id="ytFrontendSelect" class="field-select">' +
-        '<option value="nocookie">YouTube No-Cookie Embed (Fastest Video)</option>' +
-        '<option value="invidious">Invidious Privacy Frontend (Search + Browse)</option>' +
-        '<option value="piped">Piped Frontend</option>' +
-        '<option value="direct">Direct YouTube via Scramjet</option>' +
-        "</select>" +
-        '<button type="button" class="btn btn-primary" id="ytLaunchTabBtn">Watch in Tab</button>' +
-        '<button type="button" class="btn btn-secondary" id="ytLaunchPipBtn">Mini PiP</button>' +
-        "</div></div>" +
-        '<div class="internal-panel" style="margin-bottom:18px">' +
-        "<h3>Persistent Background Radio &amp; Custom Stream Player</h3>" +
-        '<p class="settings-desc">Keeps playing across all tabs and games — and automatically pauses when you hit your Boss Key.</p>' +
+        '<div class="internal-panel media-radio-panel" style="margin-bottom:18px">' +
+        "<h3>Made for you</h3>" +
+        '<p class="settings-desc">Choose a live station to keep playing across tabs. Audio pauses when you use your Boss Key.</p>' +
         '<div class="internal-grid" style="margin-top:12px">' +
         RADIO_STATIONS.map(function (st, idx) {
           var isActive = isBgPlaying && currentStationTitle === st.name;
@@ -286,7 +283,7 @@
         '<input id="customAudioUrlInput" type="text" class="field-input" placeholder="Or paste custom .mp3 / .m4a / Icecast radio stream URL..." style="flex:1;min-width:240px" />' +
         '<button type="button" class="btn btn-secondary" id="playCustomAudioBtn">Play Custom Audio</button>' +
         "</div></div>" +
-        '<div class="section-header"><h2>Streaming, Live TV &amp; Music Web Apps</h2></div>' +
+        '<div class="section-header media-apps-heading"><h2>More to explore</h2></div>' +
         '<div class="games-catalog-grid">' +
         MEDIA_APPS.map(function (m, idx) {
           var iconHtml =
@@ -322,7 +319,21 @@
             '">Mini</button></div></div>'
           );
         }).join("") +
-        "</div></div>";
+        "</div>" +
+        '<div class="internal-panel media-video-tools" style="margin:20px 0 18px">' +
+        "<h3>Smart Ad-Free YouTube &amp; Video Launcher</h3>" +
+        '<p class="settings-desc">Paste any YouTube link, video ID, or search query to watch ad-free with your preferred frontend.</p>' +
+        '<div class="req-grid" style="margin-top:10px">' +
+        '<input id="ytSmartInput" type="text" class="field-input" placeholder="Paste a YouTube link or search term..." style="grid-column:span 2" />' +
+        '<select id="ytFrontendSelect" class="field-select">' +
+        '<option value="nocookie">YouTube No-Cookie Embed</option>' +
+        '<option value="invidious">Invidious Privacy Frontend</option>' +
+        '<option value="piped">Piped Frontend</option>' +
+        '<option value="direct">Direct YouTube via Scramjet</option>' +
+        "</select>" +
+        '<button type="button" class="btn btn-primary" id="ytLaunchTabBtn">Watch in Tab</button>' +
+        '<button type="button" class="btn btn-secondary" id="ytLaunchPipBtn">Mini PiP</button>' +
+        "</div></div></div>";
 
       function resolveYtTarget() {
         var raw = container.querySelector("#ytSmartInput").value.trim();

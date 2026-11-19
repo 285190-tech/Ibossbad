@@ -57,6 +57,8 @@ test("Ibossbad web app, passcode gate, token session, and authenticated proxying
     var remotePort = remoteServer.address().port;
     var instance = createApp({
       authRequired: true,
+      // This integration test deliberately proxies its local upstream fixture.
+      allowPrivateProxyTargets: true,
       passcode: "secret123",
       sessionSecret: "test-secret",
       supabaseUrl: "https://xemrsowtnlderqjzluww.supabase.co",

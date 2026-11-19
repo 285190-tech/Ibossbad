@@ -4,11 +4,11 @@
   "description": "Scramjet + WISP Stealth Browser, 200+ Games Hub, Media & Retro Emulator Suite",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#090d16",
-  "theme_color": "#090d16",
+  "background_color": "#100708",
+  "theme_color": "#100708",
   "icons": [
     {
-      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'%3E%3Crect width='128' height='128' rx='28' fill='%23090d16'/%3E%3Ccircle cx='64' cy='64' r='36' fill='none' stroke='%230ea5e9' stroke-width='10'/%3E%3Ccircle cx='64' cy='64' r='14' fill='%2338bdf8'/%3E%3C/svg%3E",
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'%3E%3Crect width='128' height='128' rx='28' fill='%23100708'/%3E%3Cpath d='M64 14c-5 10-14 12-24 13 7 5 15 6 24 3 9 3 17 2 24-3-10-1-19-3-24-13Z' fill='%2325c985'/%3E%3Cpath d='M64 29c-18 0-35 5-42 19-11 23 5 58 42 81 37-23 53-58 42-81-7-14-24-19-42-19Z' fill='%23ff1638'/%3E%3Cpath d='m47 55 2 4m32-4-2 4m-16 13 1 4' stroke='%23ffd5da' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E",
       "sizes": "128x128",
       "type": "image/svg+xml",
       "purpose": "any maskable"

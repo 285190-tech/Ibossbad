@@ -371,6 +371,8 @@ test("Server stealth tunnel /lesson-media/unit-8843 & /proxy/u1_<token> preserve
   var interceptedProxyTargets = [];
   var instance = createApp({
     passcode: "jojo123",
+    // This test's opaque stream token intentionally points to a local fixture.
+    allowPrivateProxyTargets: true,
     requestMiddleware: [
       function (data) {
         interceptedProxyTargets.push(data.url);

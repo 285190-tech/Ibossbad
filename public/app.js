@@ -31,6 +31,13 @@
   };
 
   const THEME_PRESETS = {
+    strawberry: {
+      bgBase: "#100708",
+      bgSurface: "#211112",
+      bgElevated: "#31191b",
+      accent: "#ff1638",
+      textPrimary: "#f7edef",
+    },
     midnight: {
       bgBase: "#090d16",
       bgSurface: "#111827",
@@ -183,11 +190,6 @@
 
   const QUICK_LINKS = [
     { title: "200+ Games Hub", url: "iboss://games", badge: "GM" },
-    { title: "JoJo: HFTF Arcade", url: "iboss://jojo", badge: "JJ" },
-    { title: "Cine-Cloud PC", url: "iboss://cinecloud", badge: "CC" },
-    { title: "Focus Launchpad", url: "iboss://launchpad", badge: "FP" },
-    { title: "Unblocked Servers", url: "iboss://servers", badge: "SV" },
-    { title: "Media & Radio", url: "iboss://media", badge: "MD" },
     { title: "YouTube", url: "https://www.youtube.com/", badge: "YT" },
     { title: "Discord", url: "https://discord.com/app", badge: "DC" },
     {
@@ -200,6 +202,11 @@
       url: "/mgg-games/slope/",
       badge: "SL",
     },
+    { title: "JoJo: HFTF Arcade", url: "iboss://jojo", badge: "JJ" },
+    { title: "Cine-Cloud PC", url: "iboss://cinecloud", badge: "CC" },
+    { title: "Focus Launchpad", url: "iboss://launchpad", badge: "FP" },
+    { title: "Unblocked Servers", url: "iboss://servers", badge: "SV" },
+    { title: "Media & Radio", url: "iboss://media", badge: "MD" },
   ];
 
   const DEFAULT_SETTINGS = {
@@ -215,12 +222,12 @@
     wispPreset: "auto",
     customWispUrl: "",
     shieldEnabled: true,
-    themePreset: "midnight",
+    themePreset: "strawberry",
     customColors: {
-      bgBase: "#090d16",
-      bgSurface: "#111827",
-      accent: "#0ea5e9",
-      textPrimary: "#f1f5f9",
+      bgBase: "#100708",
+      bgSurface: "#211112",
+      accent: "#ff1638",
+      textPrimary: "#f7edef",
     },
     particlesEnabled: true,
     autoCloakBlur: false,
@@ -453,7 +460,7 @@
   function ensureInternalPages() {
     if (internalPages) return Promise.resolve(internalPages);
     if (!internalPagesLoadPromise) {
-      internalPagesLoadPromise = loadScriptOnce("/ui/internal-pages.js?v=17")
+      internalPagesLoadPromise = loadScriptOnce("/ui/internal-pages.js?v=18")
         .then(() => {
           internalPages = createInternalPagesController();
           return internalPages;
@@ -911,25 +918,73 @@
 
   // --- Theme & Particle Starfield ---
   function applyTheme() {
-    const presetName = state.settings.themePreset || "midnight";
+    const requestedPreset = state.settings.themePreset || "strawberry";
+    const presetName =
+      requestedPreset === "custom" || THEME_PRESETS[requestedPreset]
+        ? requestedPreset
+        : "strawberry";
     const colors =
       presetName === "custom"
         ? Object.assign(
             {},
-            THEME_PRESETS.midnight,
+            THEME_PRESETS.strawberry,
             state.settings.customColors || {}
           )
-        : THEME_PRESETS[presetName] || THEME_PRESETS.midnight;
-
+        : THEME_PRESETS[presetName];
     const root = document.documentElement;
+    const elevated = colors.bgElevated || colors.bgSurface;
+
+    root.dataset.theme = presetName;
     root.style.setProperty("--bg-base", colors.bgBase);
     root.style.setProperty("--bg-surface", colors.bgSurface);
-    if (colors.bgElevated) {
-      root.style.setProperty("--bg-elevated", colors.bgElevated);
-    }
+    root.style.setProperty("--bg-elevated", elevated);
+    root.style.setProperty(
+      "--bg-hover",
+      "color-mix(in srgb, " + elevated + " 80%, " + colors.accent + " 20%)"
+    );
+    root.style.setProperty(
+      "--border-subtle",
+      "color-mix(in srgb, " +
+        colors.bgSurface +
+        " 76%, " +
+        colors.accent +
+        " 24%)"
+    );
+    root.style.setProperty(
+      "--border-strong",
+      "color-mix(in srgb, " +
+        colors.bgSurface +
+        " 58%, " +
+        colors.accent +
+        " 42%)"
+    );
+    root.style.setProperty("--border-focus", colors.accent);
     root.style.setProperty("--accent", colors.accent);
-    root.style.setProperty("--accent-hover", colors.accent);
+    root.style.setProperty(
+      "--accent-hover",
+      "color-mix(in srgb, " + colors.accent + " 86%, white)"
+    );
+    root.style.setProperty(
+      "--accent-soft",
+      "color-mix(in srgb, " + colors.accent + " 16%, transparent)"
+    );
     root.style.setProperty("--text-primary", colors.textPrimary);
+    root.style.setProperty(
+      "--text-secondary",
+      "color-mix(in srgb, " +
+        colors.textPrimary +
+        " 68%, " +
+        colors.bgBase +
+        ")"
+    );
+    root.style.setProperty(
+      "--text-muted",
+      "color-mix(in srgb, " +
+        colors.textPrimary +
+        " 45%, " +
+        colors.bgBase +
+        ")"
+    );
   }
 
   function initParticleStarfield() {
@@ -1164,13 +1219,7 @@
           : state.settings.proxyEngine === "wisp"
           ? "GUST Blob WISP"
           : "Scramjet + WISP";
-      statusText.textContent =
-        engLabel +
-        " · Cloak: " +
-        c.label +
-        " · Boss: [" +
-        (state.settings.panicKey || "`") +
-        "]";
+      statusText.textContent = engLabel + " · " + c.label;
     }
   }
 
@@ -3345,15 +3394,15 @@
       state.settings.shieldEnabled === false ? "off" : "on";
 
     document.getElementById("themePresetSelect").value =
-      state.settings.themePreset || "midnight";
+      state.settings.themePreset || "strawberry";
     document
       .getElementById("customThemePickers")
       .classList.toggle("hidden", state.settings.themePreset !== "custom");
     const cc = state.settings.customColors || DEFAULT_SETTINGS.customColors;
-    document.getElementById("colBgPrimary").value = cc.bgBase || "#090d16";
-    document.getElementById("colBgSurface").value = cc.bgSurface || "#111827";
-    document.getElementById("colAccent").value = cc.accent || "#0ea5e9";
-    document.getElementById("colText").value = cc.textPrimary || "#f1f5f9";
+    document.getElementById("colBgPrimary").value = cc.bgBase || "#100708";
+    document.getElementById("colBgSurface").value = cc.bgSurface || "#211112";
+    document.getElementById("colAccent").value = cc.accent || "#ff1638";
+    document.getElementById("colText").value = cc.textPrimary || "#f7edef";
     document.getElementById("particlesSelect").value =
       state.settings.particlesEnabled === false ? "off" : "on";
 
@@ -3453,7 +3502,7 @@
       document.getElementById("shieldModeSelect").value !== "off";
 
     state.settings.themePreset =
-      document.getElementById("themePresetSelect").value || "midnight";
+      document.getElementById("themePresetSelect").value || "strawberry";
     state.settings.customColors = {
       bgBase: document.getElementById("colBgPrimary").value,
       bgSurface: document.getElementById("colBgSurface").value,
@@ -4083,9 +4132,24 @@
           bar.classList.remove("hidden");
           document.getElementById("radioNowPlaying").textContent =
             "🎵 " + radioSt.station.name + " · " + radioSt.station.genre;
-          document.getElementById(
-            "radioPlayPauseBtn"
-          ).textContent = radioSt.playing ? "Pause" : "Resume";
+          const radioToggle = document.getElementById("radioPlayPauseBtn");
+          if (radioToggle) {
+            radioToggle.textContent = radioSt.playing ? "Pause" : "Resume";
+            radioToggle.setAttribute(
+              "aria-label",
+              radioSt.playing
+                ? "Pause background radio"
+                : "Resume background radio"
+            );
+          }
+          const liveIndicator = bar.querySelector(".radio-live-indicator");
+          const liveLabel = bar.querySelector(".radio-live-label");
+          if (liveIndicator) {
+            liveIndicator.classList.toggle("is-paused", !radioSt.playing);
+          }
+          if (liveLabel) {
+            liveLabel.textContent = radioSt.playing ? "LIVE" : "PAUSED";
+          }
         },
       });
     }

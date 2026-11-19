@@ -323,6 +323,9 @@ test("v8.0: /mgg-games/ direct mirror, broken CNAME healing, binary WISP server 
     );
     var fetchListener = null;
     var nextScramjetBehavior = "throw";
+    var nextScramjetConfig = "missing";
+    var scramjetLoadAttempts = 0;
+    var scramjetRouteCalls = 0;
     var swSelf = {
       location: { origin: "https://ibossbad.onrender.com" },
       skipWaiting: function () {},
@@ -370,12 +373,34 @@ test("v8.0: /mgg-games/ direct mirror, broken CNAME healing, binary WISP server 
       $scramjetLoadWorker: function () {
         return {
           ScramjetServiceWorker: function () {
-            this.config = { prefix: "/scramjet/" };
+            this.config = undefined;
             this.loadConfig = function () {
+              scramjetLoadAttempts++;
+              // Match Scramjet's loadConfig() behavior: any truthy in-memory
+              // config short-circuits the IndexedDB read, even if it's empty.
+              if (this.config) return Promise.resolve();
+              if (nextScramjetConfig === "empty") {
+                this.config = {};
+              } else if (nextScramjetConfig === "valid") {
+                this.config = {
+                  prefix: "/scramjet/",
+                  files: { wasm: "/scramjet.wasm.wasm" },
+                };
+              } else {
+                this.config = undefined;
+              }
               return Promise.resolve();
             };
             this.route = function (ev) {
-              return ev.request.url.indexOf("/scramjet/") !== -1;
+              scramjetRouteCalls++;
+              return (
+                ev.request.url.indexOf(
+                  swSelf.location.origin + this.config.prefix
+                ) === 0 ||
+                ev.request.url.indexOf(
+                  swSelf.location.origin + this.config.files.wasm
+                ) === 0
+              );
             };
             this.fetch = function () {
               if (nextScramjetBehavior === "throw") {
@@ -408,6 +433,80 @@ test("v8.0: /mgg-games/ direct mirror, broken CNAME healing, binary WISP server 
     };
     vm.runInNewContext(swSrc, swCtx);
     t.ok(fetchListener, "Registered SW fetch listener");
+
+    var requestScramjetNavigation = function (url) {
+      var responsePromise = null;
+      fetchListener({
+        request: {
+          url: url,
+          method: "GET",
+          mode: "navigate",
+          destination: "iframe",
+          headers: {
+            has: function () {
+              return false;
+            },
+            get: function () {
+              return "text/html";
+            },
+          },
+        },
+        respondWith: function (promise) {
+          responsePromise = promise;
+        },
+      });
+      return responsePromise;
+    };
+
+    // A missing IndexedDB record and a truthy-but-empty record must never reach
+    // Scramjet.route(), which dereferences config.prefix and config.files.wasm.
+    var missingConfigRes = await requestScramjetNavigation(
+      "https://ibossbad.onrender.com/scramjet/https%3A%2F%2Fwww.youtube.com%2F"
+    );
+    t.equal(
+      missingConfigRes.status,
+      200,
+      "Missing IndexedDB config is converted into a safe navigation recovery page"
+    );
+    var missingConfigHtml = await missingConfigRes.text();
+    t.match(
+      missingConfigHtml,
+      /Scramjet configuration is missing or invalid/,
+      "Recovery page explains that Scramjet config is unavailable"
+    );
+    t.equal(
+      scramjetLoadAttempts,
+      1,
+      "Attempts to load the missing config once"
+    );
+    t.equal(scramjetRouteCalls, 0, "Does not route before config is valid");
+
+    nextScramjetConfig = "empty";
+    var emptyConfigRes = await requestScramjetNavigation(
+      "https://ibossbad.onrender.com/scramjet/https%3A%2F%2Fwww.youtube.com%2F"
+    );
+    t.equal(
+      emptyConfigRes.status,
+      200,
+      "Empty IndexedDB config is also converted into a safe recovery page"
+    );
+    t.equal(scramjetLoadAttempts, 2, "Retries loading after an empty config");
+    t.equal(scramjetRouteCalls, 0, "Empty config never reaches route()");
+
+    nextScramjetConfig = "valid";
+    await requestScramjetNavigation(
+      "https://ibossbad.onrender.com/scramjet/https%3A%2F%2Fwww.youtube.com%2F"
+    );
+    t.equal(
+      scramjetLoadAttempts,
+      3,
+      "Retries IndexedDB and loads later valid config"
+    );
+    t.equal(
+      scramjetRouteCalls,
+      1,
+      "Routes only after a valid config is loaded"
+    );
 
     // a) Legacy pijgalk.desarrollos-lowcost.com inside /scramjet/ redirects 302 -> /mgg-games/slope/
     var respondedPromise = null;

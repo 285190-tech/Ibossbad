@@ -224,7 +224,7 @@ test("v6.0 Speed Suite: Brotli/Gzip static WASM compression, ETag 304, WISP tuni
       "Acorn is loaded only when WISP is used"
     );
     t.ok(
-      browserApp.indexOf('loadScriptOnce("/ui/internal-pages.js?v=17")') !==
+      browserApp.indexOf('loadScriptOnce("/ui/internal-pages.js?v=18")') !==
         -1 &&
         browserApp.indexOf('loadScriptOnce("/ui/admin-panel.js?v=15")') !== -1,
       "internal pages and admin UI are loaded only when opened"
@@ -509,9 +509,13 @@ test("v6.0 Speed Suite: Service Worker fast-path bypass, O(1) Shield, normalized
     $scramjetLoadWorker: function () {
       return {
         ScramjetServiceWorker: function () {
-          this.config = { prefix: "/scramjet/" };
+          this.config = undefined;
           this.loadConfig = async function () {
             configLoads++;
+            this.config = {
+              prefix: "/scramjet/",
+              files: { wasm: "/scramjet.wasm.wasm" },
+            };
           };
           this.route = function (ev) {
             return ev.request.url.indexOf("/scramjet/") !== -1;
