@@ -120,7 +120,7 @@
   }
 
   function getProxiedArtUrl(rawUrl) {
-    if (!rawUrl) return "/ui/assets/cat-action.jpg";
+    if (!rawUrl) return "/ui/assets/cat-action.webp";
     if (rawUrl.indexOf("/") === 0) return rawUrl;
     return "/proxy/" + rawUrl;
   }
@@ -390,8 +390,8 @@
     var lastGpStep = 0;
     var gpFocused = null;
 
-    var fallbackPoster = "/ui/assets/cat-action.jpg";
-    var fallbackBanner = "/ui/assets/banner-games.jpg";
+    var fallbackPoster = "/ui/assets/cat-action.webp";
+    var fallbackBanner = "/ui/assets/banner-games.webp";
 
     function buildHeroRotation(db) {
       var arr = [];

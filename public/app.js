@@ -302,6 +302,7 @@
   let ctxMenuTabId = null;
   let cmdSelectedIdx = 0;
   let cmdFilteredItems = [];
+  let customGamesLoadPromise = null;
   let internalPagesLoadPromise = null;
   let adminPanelLoadPromise = null;
   let scramjetEngineLoadPromise = null;
@@ -325,11 +326,11 @@
     });
   }
 
-  function loadScriptOnce(src) {
+  function loadScriptOnce(src, ordered) {
     if (dynamicScriptPromises[src]) return dynamicScriptPromises[src];
     dynamicScriptPromises[src] = new Promise((resolve, reject) => {
       const script = document.createElement("script");
-      script.async = true;
+      script.async = !ordered;
       script.src = src;
       script.onload = () => resolve();
       script.onerror = () => {
@@ -340,6 +341,16 @@
       document.head.appendChild(script);
     });
     return dynamicScriptPromises[src];
+  }
+
+  function ensureServerFinder() {
+    if (window.IbossServerFinder)
+      return Promise.resolve(window.IbossServerFinder);
+    return loadScriptOnce("/ui/server-finder.js?v=17").then(() => {
+      if (!window.IbossServerFinder)
+        throw new Error("Server finder is unavailable.");
+      return window.IbossServerFinder;
+    });
   }
 
   function createInternalPagesController() {
@@ -460,7 +471,7 @@
   function ensureInternalPages() {
     if (internalPages) return Promise.resolve(internalPages);
     if (!internalPagesLoadPromise) {
-      internalPagesLoadPromise = loadScriptOnce("/ui/internal-pages.js?v=18")
+      internalPagesLoadPromise = loadScriptOnce("/ui/internal-pages.js?v=19")
         .then(() => {
           internalPages = createInternalPagesController();
           return internalPages;
@@ -512,6 +523,7 @@
       throw new Error("Scramjet is unavailable.");
     }
     scramjetEngine = window.IbossScramjetEngine.create({
+      ensureServerFinder: ensureServerFinder,
       onStatus: (status) => {
         if (state.settings.proxyEngine === "scramjet") {
           state.wispStatus = status;
@@ -546,10 +558,12 @@
     if (scramjetEngine) return Promise.resolve(scramjetEngine);
     preconnectWispRelays();
     if (!scramjetEngineLoadPromise) {
+      // Start the scanner in parallel, but do not delay controller setup on it.
+      ensureServerFinder().catch(() => {});
       scramjetEngineLoadPromise = Promise.all([
         loadScriptOnce("/scram/scramjet.all.js"),
         loadScriptOnce("/baremux/index.js"),
-        loadScriptOnce("/ui/scramjet-engine.js?v=15"),
+        loadScriptOnce("/ui/scramjet-engine.js?v=20"),
       ])
         .then(createScramjetEngine)
         .catch((err) => {
@@ -607,7 +621,7 @@
     if (wispEngine) return Promise.resolve(wispEngine);
     preconnectWispRelays();
     if (!wispEngineLoadPromise) {
-      wispEngineLoadPromise = loadScriptOnce("/ui/wisp-engine.js?v=17")
+      wispEngineLoadPromise = loadScriptOnce("/ui/wisp-engine.js?v=26")
         .then(createWispEngine)
         .catch((err) => {
           wispEngineLoadPromise = null;
@@ -618,11 +632,23 @@
   }
 
   async function ensureWispSyntaxTools() {
-    try {
-      await loadScriptOnce("/vendor/acorn/acorn.js");
-      await loadScriptOnce("/vendor/acorn-walk/walk.js");
-    } catch (_e) {
-      // WISP can still use its non-AST fallback when these optional helpers fail.
+    const parser = "/vendor/acorn/acorn.js";
+    const walker = "/vendor/acorn-walk/walk.js";
+    // Both files download together; ordered dynamic scripts ensure Acorn
+    // initializes its global before the walker attaches to it. Wait for both
+    // results so a later retry can safely re-run the pair in order.
+    const results = await Promise.all(
+      [parser, walker].map((src) =>
+        loadScriptOnce(src, true).then(
+          () => true,
+          () => false
+        )
+      )
+    );
+    if (!results[0] || !results[1]) {
+      delete dynamicScriptPromises[parser];
+      delete dynamicScriptPromises[walker];
+      // WISP can still use its non-AST fallback if either helper fails.
     }
   }
 
@@ -1824,8 +1850,10 @@
           "&engine=" +
           encodeURIComponent(state.settings.proxyEngine)
       );
+      if (tab.navToken !== myToken) return;
       if (checkRes.status === 403 || checkRes.status === 503) {
         const checkData = await checkRes.json();
+        if (tab.navToken !== myToken) return;
         tab.blobUrl = buildErrorBlobUrl(
           resolved,
           (checkData && checkData.reason) || "Blocked by instance policy.",
@@ -1835,6 +1863,7 @@
         return;
       }
     } catch (_e) {}
+    if (tab.navToken !== myToken) return;
 
     // Classic Server Stream (/proxy/) engine
     if (state.settings.proxyEngine === "stream") {
@@ -1846,6 +1875,11 @@
       return;
     }
 
+    // Syntax helpers and engine can load in parallel without contacting the
+    // destination before the policy check has completed.
+    let syntaxReady =
+      state.settings.proxyEngine === "wisp" ? ensureWispSyntaxTools() : null;
+
     // Load proxy code only when a site is actually opened. Authenticated users
     // start this work in the background during bootstrap; guest/stream sessions
     // avoid downloading the Scramjet runtime entirely.
@@ -1854,6 +1888,8 @@
         await ensureScramjetEngine();
       } catch (_e) {}
     }
+
+    if (tab.navToken !== myToken) return;
 
     // Flagship Scramjet Service Worker + BareMux WISP engine
     if (state.settings.proxyEngine === "scramjet" && scramjetEngine) {
@@ -1916,12 +1952,15 @@
       }
     }
 
+    if (tab.navToken !== myToken) return;
     if (tab.id === state.activeTabId) {
       setLoadingProgress(true, "Connecting via WISP...");
     }
 
     try {
-      await ensureWispSyntaxTools();
+      if (!syntaxReady) syntaxReady = ensureWispSyntaxTools();
+      await syntaxReady;
+      if (tab.navToken !== myToken) return;
       const res = await wispEngine.loadPage(resolved, tab.id, (stage) => {
         if (tab.id === state.activeTabId && tab.navToken === myToken) {
           setLoadingProgress(true, stage);
@@ -1969,6 +2008,7 @@
       return;
     }
     const [removed] = state.tabs.splice(idx, 1);
+    removed.navToken++;
     if (removed.url) {
       state.closedTabs.unshift({ url: removed.url, title: removed.title });
       if (state.closedTabs.length > 15) state.closedTabs.length = 15;
@@ -2148,6 +2188,53 @@
               }
             });
         }
+      } else if (
+        url.toLowerCase().trim() === "iboss://games" &&
+        customGamesLoadPromise
+      ) {
+        internalView.innerHTML =
+          '<div class="internal-wrap"><div class="internal-panel" role="status">Loading games…</div></div>';
+        customGamesLoadPromise.then(() => {
+          const currentTab = getActiveTab();
+          if (
+            currentTab &&
+            currentTab.id === requestedTabId &&
+            currentTab.url === url &&
+            !internalView.classList.contains("hidden")
+          ) {
+            updateViewportForActiveTab();
+          }
+        });
+      } else if (
+        /^(iboss:\/\/servers|iboss:\/\/finder)$/i.test(url.trim()) &&
+        !window.IbossServerFinder
+      ) {
+        internalView.innerHTML =
+          '<div class="internal-wrap"><div class="internal-panel" role="status">Loading server finder…</div></div>';
+        Promise.all([ensureServerFinder(), ensureInternalPages()])
+          .then(([finder, pages]) => {
+            const currentTab = getActiveTab();
+            if (
+              finder &&
+              currentTab &&
+              currentTab.id === requestedTabId &&
+              currentTab.url === url &&
+              !internalView.classList.contains("hidden")
+            ) {
+              pages.render(url, internalView);
+            }
+          })
+          .catch(() => {
+            const currentTab = getActiveTab();
+            if (
+              currentTab &&
+              currentTab.id === requestedTabId &&
+              currentTab.url === url
+            ) {
+              internalView.innerHTML =
+                '<div class="internal-wrap"><div class="internal-panel" role="alert">Unable to load server finder. Please retry.</div></div>';
+            }
+          });
       } else if (internalPages) {
         internalPages.render(url, internalView);
       } else {
@@ -4223,10 +4310,12 @@
         }
       }
 
-      const [res] = await Promise.all([
-        fetch("/api/status"),
-        reloadCustomGames(),
-      ]);
+      // The catalog can be slow independently of authentication. Load it in
+      // parallel without delaying the gate, restored tabs, or event handlers.
+      customGamesLoadPromise = reloadCustomGames().then(() => {
+        customGamesLoadPromise = null;
+      });
+      const res = await fetch("/api/status");
       const status = await res.json();
       state.authenticated = Boolean(status.authenticated);
       state.authRequired = Boolean(status.authRequired);
@@ -4469,12 +4558,13 @@
     const settingsFindServerBtn = document.getElementById(
       "settingsFindServerBtn"
     );
-    if (settingsFindServerBtn && window.IbossServerFinder) {
+    if (settingsFindServerBtn) {
       settingsFindServerBtn.addEventListener("click", async () => {
         settingsFindServerBtn.disabled = true;
         settingsFindServerBtn.textContent = "⏳ Scanning...";
         try {
-          const best = await window.IbossServerFinder.findBestUnblockedServer({
+          const finder = await ensureServerFinder();
+          const best = await finder.findBestUnblockedServer({
             forceFullScan: true,
           });
           if (best) {
@@ -4501,6 +4591,8 @@
           } else {
             showToast("No unblocked WISP servers responded on this network.");
           }
+        } catch (_e) {
+          showToast("Unable to load server finder. Please retry.");
         } finally {
           settingsFindServerBtn.disabled = false;
           settingsFindServerBtn.textContent = "⚡ Find Unblocked";

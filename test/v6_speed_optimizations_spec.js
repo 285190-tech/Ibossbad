@@ -219,11 +219,11 @@ test("v6.0 Speed Suite: Brotli/Gzip static WASM compression, ETag 304, WISP tuni
       "Scramjet code is loaded on demand by the browser app"
     );
     t.ok(
-      browserApp.indexOf('loadScriptOnce("/vendor/acorn/acorn.js")') !== -1,
+      browserApp.indexOf('const parser = "/vendor/acorn/acorn.js"') !== -1,
       "Acorn is loaded only when WISP is used"
     );
     t.ok(
-      browserApp.indexOf('loadScriptOnce("/ui/internal-pages.js?v=18")') !==
+      browserApp.indexOf('loadScriptOnce("/ui/internal-pages.js?v=19")') !==
         -1 &&
         browserApp.indexOf('loadScriptOnce("/ui/admin-panel.js?v=15")') !== -1,
       "internal pages and admin UI are loaded only when opened"
@@ -238,7 +238,7 @@ test("v6.0 Speed Suite: Brotli/Gzip static WASM compression, ETag 304, WISP tuni
         'hooks.loadScript("/vendor/jszip/jszip.min.js")'
       ) !== -1 &&
         internalPagesSource.indexOf(
-          'hooks.loadScript("/ui/cine-cloud.js?v=16")'
+          'hooks.loadScript("/ui/cine-cloud.js?v=17")'
         ) !== -1 &&
         internalPagesSource.indexOf(
           'hooks.loadScript("/ui/cine-cloud-catalog.js?v=15")'

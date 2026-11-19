@@ -1,3 +1,5 @@
 # don't change line endings on windows
 # the linter chokes and I've seen it break tests before
-* text eol=lf 
+* text eol=lf
+# Binary artwork must never undergo text line-ending conversion.
+*.webp binary

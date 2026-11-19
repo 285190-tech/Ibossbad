@@ -97,7 +97,7 @@
     }
   }
 
-  function saveCachedRelay(url, label, latency) {
+  function saveCachedRelay(url, label, latency, protocol) {
     try {
       window.sessionStorage.setItem(
         FAST_RELAY_SESSION_KEY,
@@ -105,6 +105,7 @@
           url: url,
           label: label,
           latency: latency || null,
+          protocol: protocol,
           ts: Date.now(),
         })
       );
@@ -346,7 +347,7 @@
           "Service Workers are disabled in this browser context."
         );
       }
-      var reg = await navigator.serviceWorker.register("/sw.js?v=10", {
+      var reg = await navigator.serviceWorker.register("/sw.js?v=12", {
         scope: "/",
         updateViaCache: "none",
       });
@@ -551,7 +552,7 @@
       activeWispUrl = normUrl;
       activeWispLabel = label || normUrl;
       activeWispLatency = latency || null;
-      saveCachedRelay(normUrl, activeWispLabel, activeWispLatency);
+      saveCachedRelay(normUrl, activeWispLabel, activeWispLatency, proto);
       emitStatus();
     }
 
@@ -563,10 +564,20 @@
       if (transportReadyPromise) return transportReadyPromise;
 
       transportReadyPromise = (async function () {
+        // Controller initialization can overlap the optional scanner download,
+        // but relay selection still waits for binary handshake/protocol support.
+        var finderReady =
+          typeof cb.ensureServerFinder === "function"
+            ? Promise.resolve()
+                .then(cb.ensureServerFinder)
+                .catch(function () {})
+            : Promise.resolve();
         if (customWispUrl) {
           var customBoot = await Promise.all([
             ensureInitialized(),
-            probeWsLatency(customWispUrl, 2500),
+            finderReady.then(function () {
+              return probeWsLatency(customWispUrl, 2500);
+            }),
           ]);
           await setBareMuxWisp(customWispUrl, "Custom WISP", customBoot[1]);
           return;
@@ -575,11 +586,21 @@
         // Instant zero-probe path if this browser session already verified a relay
         var cachedRelay = loadCachedRelay();
         if (cachedRelay && cachedRelay.url) {
-          await ensureInitialized();
+          var cachedProtocol = cachedRelay.protocol;
+          var hasCachedProtocol =
+            cachedProtocol === "WISP v1" || cachedProtocol === "WISP v2";
+          // Older entries lack a protocol, so they still wait for the finder.
+          // A known session protocol can select the same transport immediately;
+          // the optional finder continues loading in the background.
+          await Promise.all([
+            ensureInitialized(),
+            hasCachedProtocol ? Promise.resolve() : finderReady,
+          ]);
           await setBareMuxWisp(
             cachedRelay.url,
             cachedRelay.label,
-            cachedRelay.latency
+            cachedRelay.latency,
+            hasCachedProtocol ? cachedProtocol : null
           );
           return;
         }
@@ -591,7 +612,9 @@
         if (selfTunnelVerified !== false) {
           var parallelSelf = await Promise.all([
             ensureInitialized(),
-            probeWsLatency(selfUrl, 2000),
+            finderReady.then(function () {
+              return probeWsLatency(selfUrl, 2000);
+            }),
           ]);
           var selfMs = parallelSelf[1];
           if (selfMs !== null) {
@@ -606,7 +629,7 @@
           }
           selfTunnelVerified = false;
         } else {
-          await ensureInitialized();
+          await Promise.all([ensureInitialized(), finderReady]);
         }
 
         if (allowPoolFailover) {

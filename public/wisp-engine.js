@@ -112,6 +112,13 @@
 
   function bytesToBase64(bytes) {
     var u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    // Newer browsers can encode directly from bytes without allocating a
+    // large intermediate binary string. Older browsers use the same fallback.
+    if (typeof u8.toBase64 === "function") {
+      try {
+        return u8.toBase64();
+      } catch (_e) {}
+    }
     var bin = "";
     var chunk = 32768;
     for (var i = 0; i < u8.length; i += chunk) {
@@ -361,12 +368,26 @@
     edits.sort(function (a, b) {
       return b.start - a.start || b.end - b.start - (a.end - a.start);
     });
-    var out = src;
+    // Assemble non-overlapping edits in one pass instead of repeatedly slicing
+    // the growing output, which becomes expensive on location-heavy bundles.
+    // Preserve the historical behavior for overlapping edits.
+    var parts = [];
+    var cursor = src.length;
     for (var i = 0; i < edits.length; i++) {
       var e = edits[i];
-      out = out.slice(0, e.start) + e.text + out.slice(e.end);
+      if (e.end > cursor) {
+        var out = src;
+        for (var j = 0; j < edits.length; j++) {
+          var edit = edits[j];
+          out = out.slice(0, edit.start) + edit.text + out.slice(edit.end);
+        }
+        return out;
+      }
+      parts.push(src.slice(e.end, cursor), e.text);
+      cursor = e.start;
     }
-    return out;
+    parts.push(src.slice(0, cursor));
+    return parts.reverse().join("");
   }
 
   // Transform ES module source: collect sub-imports, resolve relative specifiers to real URLs,
@@ -918,6 +939,8 @@
   function createWispEngine(callbacks) {
     var cb = callbacks || {};
     var wasmReadyPromise = null;
+    var connectionPromise = null;
+    var connectionGeneration = 0;
     var session = null;
     var activeWispUrl = null;
     var activeWispLabel = "Initializing";
@@ -1098,36 +1121,64 @@
       });
     }
 
-    async function ensureConnected() {
-      await ensureWasmLoaded();
-      if (activeWispUrl && session) return;
+    function ensureConnected() {
+      if (activeWispUrl && session) return Promise.resolve();
+      if (connectionPromise) return connectionPromise;
 
-      if (customWispUrl) {
-        var customMs = await probeWsLatency(customWispUrl, 3500);
-        applyWispEndpoint(customWispUrl, "Custom WISP", customMs);
-        return;
-      }
+      var generation = connectionGeneration;
+      var job = (async function () {
+        await ensureWasmLoaded();
+        if (generation !== connectionGeneration) return ensureConnected();
+        if (activeWispUrl && session) return;
 
-      if (!selfRelayFailed) {
-        var selfUrl = getSelfWispUrl();
-        var selfMs = await probeWsLatency(selfUrl, 2000);
-        if (selfMs !== null) {
-          applyWispEndpoint(selfUrl, "Self-Hosted (/wisp/)", selfMs);
+        if (customWispUrl) {
+          var customUrl = customWispUrl;
+          var customMs = await probeWsLatency(customUrl, 3500);
+          if (generation !== connectionGeneration) return ensureConnected();
+          applyWispEndpoint(customUrl, "Custom WISP", customMs);
           return;
         }
-        selfRelayFailed = true;
-      }
 
-      if (allowPoolFailover) {
-        var best = await selectBestPoolRelay(null);
-        if (best) {
-          applyWispEndpoint(best.url, "Pool · " + best.label, best.latency);
-          return;
+        if (!selfRelayFailed) {
+          var selfUrl = getSelfWispUrl();
+          var selfMs = await probeWsLatency(selfUrl, 2000);
+          if (generation !== connectionGeneration) return ensureConnected();
+          if (selfMs !== null) {
+            applyWispEndpoint(selfUrl, "Self-Hosted (/wisp/)", selfMs);
+            return;
+          }
+          selfRelayFailed = true;
         }
-      }
 
-      // Fallback even if probe timed out
-      applyWispEndpoint(getSelfWispUrl(), "Self-Hosted (/wisp/)", null);
+        if (allowPoolFailover) {
+          var best = await selectBestPoolRelay(null);
+          if (generation !== connectionGeneration) return ensureConnected();
+          if (best) {
+            applyWispEndpoint(best.url, "Pool · " + best.label, best.latency);
+            return;
+          }
+        }
+
+        // Fallback even if probe timed out
+        applyWispEndpoint(getSelfWispUrl(), "Self-Hosted (/wisp/)", null);
+      })();
+      connectionPromise = job;
+      job.then(
+        function () {
+          if (connectionPromise === job) connectionPromise = null;
+        },
+        function () {
+          if (connectionPromise === job) connectionPromise = null;
+        }
+      );
+      return job;
+    }
+
+    function invalidateConnection() {
+      connectionGeneration++;
+      connectionPromise = null;
+      activeWispUrl = null;
+      selfRelayFailed = false;
     }
 
     async function rawFetchViaWisp(url, opts) {
@@ -1252,7 +1303,25 @@
       return out;
     }
 
-    async function rewriteCssText(cssText, cssBaseUrl, depth) {
+    // Share only identical, explicitly cacheable assets within one document
+    // assembly. Other tabs, RPC fetches, headers and relay generations remain
+    // independent; failed requests are removed so later loads can retry.
+    function fetchPageAsset(url, opts, inflight) {
+      var key = JSON.stringify([
+        connectionGeneration,
+        url,
+        opts.accept || "",
+        opts.referer || "",
+      ]);
+      if (inflight.has(key)) return inflight.get(key);
+      var job = rawFetchViaWisp(url, opts).finally(function () {
+        if (inflight.get(key) === job) inflight.delete(key);
+      });
+      inflight.set(key, job);
+      return job;
+    }
+
+    async function rewriteCssText(cssText, cssBaseUrl, depth, pageInflight) {
       if (!cssText) return "";
       var curDepth = depth || 0;
       var out = cssText;
@@ -1268,17 +1337,21 @@
           imports.map(async function (item) {
             try {
               var impUrl = new URL(item.spec, cssBaseUrl).href;
-              var r = await rawFetchViaWisp(impUrl, {
+              var importOptions = {
                 accept: "text/css,*/*;q=0.1",
                 referer: cssBaseUrl,
                 cacheable: true,
-              });
+              };
+              var r = await (pageInflight
+                ? fetchPageAsset(impUrl, importOptions, pageInflight)
+                : rawFetchViaWisp(impUrl, importOptions));
               if (r.buf && r.buf.byteLength) {
                 var subCss = new TextDecoder().decode(r.buf);
                 subCss = await rewriteCssText(
                   subCss,
                   r.finalUrl || impUrl,
-                  curDepth + 1
+                  curDepth + 1,
+                  pageInflight
                 );
                 out = out.split(item.full).join(subCss);
               }
@@ -1303,10 +1376,10 @@
         matches.slice(0, 60).map(async function (entry) {
           try {
             var abs = new URL(entry.raw, cssBaseUrl).href;
-            var r = await rawFetchViaWisp(abs, {
-              referer: cssBaseUrl,
-              cacheable: true,
-            });
+            var assetOptions = { referer: cssBaseUrl, cacheable: true };
+            var r = await (pageInflight
+              ? fetchPageAsset(abs, assetOptions, pageInflight)
+              : rawFetchViaWisp(abs, assetOptions));
             if (r.buf && r.buf.byteLength && r.buf.byteLength < 1500000) {
               var ext = abs.split("?")[0].split(".").pop().toLowerCase();
               var fallbackMime =
@@ -1497,42 +1570,68 @@
         }
       });
 
-      // Rewrite external <link rel="stylesheet"> in parallel
+      // External stylesheets and original inline styles can be processed
+      // concurrently; generated styles were already rewritten with their own base URL.
+      var pageAssetInflight = new Map();
       var cssLinks = Array.from(
         doc.querySelectorAll('link[rel~="stylesheet"][href]')
       );
-      await Promise.all(
-        cssLinks.map(async function (link) {
-          var href = link.getAttribute("href");
-          if (!href || /^(data:|blob:)/i.test(href)) return;
-          try {
-            var cssUrl = new URL(href, finalUrl).href;
-            var cssRes = await rawFetchViaWisp(cssUrl, {
+      var inlineStyles = Array.from(doc.querySelectorAll("style"));
+      var stylesheetJobs = new Map();
+      function prepareStylesheet(url) {
+        var key = JSON.stringify([connectionGeneration, url]);
+        if (stylesheetJobs.has(key)) return stylesheetJobs.get(key);
+        var job = (async function () {
+          var cssRes = await fetchPageAsset(
+            url,
+            {
               accept: "text/css,*/*;q=0.1",
               referer: finalUrl,
               cacheable: true,
-            });
-            var cssStr = new TextDecoder("utf-8").decode(cssRes.buf);
-            cssStr = await rewriteCssText(cssStr, cssRes.finalUrl || cssUrl, 0);
-            var styleEl = doc.createElement("style");
-            if (link.media) styleEl.media = link.media;
-            styleEl.textContent = cssStr;
-            link.replaceWith(styleEl);
-          } catch (_e) {
-            link.remove();
-          }
-        })
-      );
-
-      // Rewrite inline <style> blocks
-      var inlineStyles = Array.from(doc.querySelectorAll("style"));
-      await Promise.all(
-        inlineStyles.map(async function (st) {
-          if (st.textContent && st.textContent.indexOf("url(") !== -1) {
-            st.textContent = await rewriteCssText(st.textContent, finalUrl, 0);
-          }
-        })
-      );
+            },
+            pageAssetInflight
+          );
+          var cssText = new TextDecoder("utf-8").decode(cssRes.buf);
+          return rewriteCssText(
+            cssText,
+            cssRes.finalUrl || url,
+            0,
+            pageAssetInflight
+          );
+        })();
+        stylesheetJobs.set(key, job);
+        return job;
+      }
+      var cssWork = Promise.all([
+        Promise.all(
+          cssLinks.map(async function (link) {
+            var href = link.getAttribute("href");
+            if (!href || /^(data:|blob:)/i.test(href)) return;
+            try {
+              var cssUrl = new URL(href, finalUrl).href;
+              var cssStr = await prepareStylesheet(cssUrl);
+              var styleEl = doc.createElement("style");
+              if (link.media) styleEl.media = link.media;
+              styleEl.textContent = cssStr;
+              link.replaceWith(styleEl);
+            } catch (_e) {
+              link.remove();
+            }
+          })
+        ),
+        Promise.all(
+          inlineStyles.map(async function (st) {
+            if (st.textContent && st.textContent.indexOf("url(") !== -1) {
+              st.textContent = await rewriteCssText(
+                st.textContent,
+                finalUrl,
+                0,
+                pageAssetInflight
+              );
+            }
+          })
+        ),
+      ]);
 
       // Rewrite scripts (inline AST location rewrite + ES module graph + classic script data: URLs)
       var esmMap = new Map();
@@ -1590,27 +1689,79 @@
         }
       });
 
-      // Crawl ES module graph & inject importmap
-      await Promise.all(
+      // Fetch and rewrite each identical classic script once per document,
+      // while retaining every script element and its execution order.
+      var classicJobs = new Map();
+      function prepareClassicScript(url) {
+        var key = JSON.stringify([connectionGeneration, url]);
+        if (classicJobs.has(key)) return classicJobs.get(key);
+        var job = (async function () {
+          var jsRes = await fetchPageAsset(
+            url,
+            {
+              accept: "*/*",
+              referer: finalUrl,
+              cacheable: true,
+            },
+            pageAssetInflight
+          );
+          if (!jsRes.buf || !jsRes.buf.byteLength) return null;
+          var jsText = rewriteLocationRefs(
+            new TextDecoder("utf-8").decode(jsRes.buf)
+          );
+          return (
+            "data:text/javascript;charset=utf-8;base64," + utf8ToBase64(jsText)
+          );
+        })();
+        classicJobs.set(key, job);
+        return job;
+      }
+      var classicWork = Promise.all(
+        classicScripts.map(async function (item) {
+          try {
+            var dataUrl = await prepareClassicScript(item.url);
+            if (dataUrl) {
+              item.scr.removeAttribute("integrity");
+              item.scr.setAttribute("src", dataUrl);
+            } else {
+              item.scr.remove();
+            }
+          } catch (_e) {
+            item.scr.remove();
+          }
+        })
+      );
+
+      // Top-level callers can safely await the same in-flight module. Recursive
+      // dependency traversal still uses its cycle-breaking sentinel.
+      var moduleRootJobs = new Map();
+      function loadRootModule(url) {
+        if (moduleRootJobs.has(url)) return moduleRootJobs.get(url);
+        var job =
+          esmInflight.get(url) ||
+          proxyEsmModule(url, esmMap, esmInflight, finalUrl);
+        moduleRootJobs.set(url, job);
+        return job;
+      }
+
+      // Crawl ES module graph alongside the other asset work.
+      var moduleWork = Promise.all(
         moduleExternalScripts.map(async function (entry) {
           if (entry.url) {
-            var modDataUrl = await proxyEsmModule(
-              entry.url,
-              esmMap,
-              esmInflight,
-              finalUrl
-            );
+            var modDataUrl = await loadRootModule(entry.url);
             entry.scr.removeAttribute("integrity");
             entry.scr.setAttribute("src", modDataUrl);
           } else if (entry.deps && entry.deps.length) {
             await Promise.all(
               entry.deps.map(function (d) {
-                return proxyEsmModule(d, esmMap, esmInflight, finalUrl);
+                return loadRootModule(d);
               })
             );
           }
         })
       );
+
+      await Promise.all([cssWork, classicWork, moduleWork]);
 
       if (esmMap.size > 0) {
         var importsObj = {};
@@ -1640,34 +1791,6 @@
           }
         }
       }
-
-      // Fetch classic <script src> in parallel & AST-rewrite location refs
-      await Promise.all(
-        classicScripts.map(async function (item) {
-          try {
-            var jsRes = await rawFetchViaWisp(item.url, {
-              accept: "*/*",
-              referer: finalUrl,
-              cacheable: true,
-            });
-            if (jsRes.buf && jsRes.buf.byteLength) {
-              var jsText = rewriteLocationRefs(
-                new TextDecoder("utf-8").decode(jsRes.buf)
-              );
-              item.scr.removeAttribute("integrity");
-              item.scr.setAttribute(
-                "src",
-                "data:text/javascript;charset=utf-8;base64," +
-                  utf8ToBase64(jsText)
-              );
-            } else {
-              item.scr.remove();
-            }
-          } catch (_e) {
-            item.scr.remove();
-          }
-        })
-      );
 
       // Route recognized CAPTCHA frames through the app proxy instead of loading
       // them directly; keep all other remote frames disabled.
@@ -1980,16 +2103,14 @@
           blockWebrtc = Boolean(cfg.blockWebrtc);
         }
         if (wispChanged) {
-          activeWispUrl = null;
-          selfRelayFailed = false;
+          invalidateConnection();
           ensureConnected().catch(function () {});
         } else {
           emitStatus();
         }
       },
       reconnect: async function () {
-        activeWispUrl = null;
-        selfRelayFailed = false;
+        invalidateConnection();
         await ensureConnected();
       },
       clearCache: function () {

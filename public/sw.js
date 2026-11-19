@@ -295,11 +295,14 @@ const VOLATILE_QUERY_KEYS = new Set([
 
 let shieldEnabled = true;
 let configLoadPromise = null;
+let configGeneration = 0;
+let initializedConfigGeneration = -1;
 
 // In-memory LRU byte ledger for ibossbad-scramjet-v1
 const lruByteMap = new Map(); // cacheKey -> byteLength
 let totalCachedBytes = 0;
 let cacheHydratePromise = null;
+let assetCacheOpenPromise = null;
 let assetCacheHits = 0;
 let assetCacheMisses = 0;
 
@@ -358,46 +361,51 @@ function isValidScramjetConfig(config) {
 }
 
 function ensureScramjetConfig() {
-  if (isValidScramjetConfig(scramjet.config)) {
+  if (configLoadPromise) return configLoadPromise;
+  if (
+    initializedConfigGeneration === configGeneration &&
+    isValidScramjetConfig(scramjet.config)
+  ) {
     return Promise.resolve();
   }
 
-  // Scramjet's loadConfig() returns early for any truthy config, even an empty
-  // object. Clear malformed state so the next load can retry its IndexedDB read.
-  if (scramjet.config) {
-    scramjet.config = undefined;
-  }
-
-  if (!configLoadPromise) {
-    var pendingConfigLoad = Promise.resolve()
-      .then(function () {
-        return scramjet.loadConfig();
-      })
-      .then(function () {
-        if (!isValidScramjetConfig(scramjet.config)) {
-          throw new Error("Scramjet configuration is missing or invalid");
-        }
-      });
-
-    var trackedConfigLoad = pendingConfigLoad.then(
-      function () {
-        if (configLoadPromise === trackedConfigLoad) {
-          configLoadPromise = null;
-        }
-      },
-      function (err) {
-        if (!isValidScramjetConfig(scramjet.config)) {
-          scramjet.config = undefined;
-        }
-        if (configLoadPromise === trackedConfigLoad) {
-          configLoadPromise = null;
-        }
-        throw err;
+  // In Scramjet 1.1, a loadConfig message only assigns scramjet.config. It
+  // does not initialize the module-wide config/codecs/WASM used by fetch().
+  // loadConfig() returns early if that property is truthy, so force the real
+  // IndexedDB initialization even when a seemingly valid message arrived.
+  var trackedConfigLoad = (async function () {
+    for (;;) {
+      var generation = configGeneration;
+      scramjet.config = undefined;
+      await scramjet.loadConfig();
+      if (generation !== configGeneration) continue;
+      if (!isValidScramjetConfig(scramjet.config)) {
+        scramjet.config = undefined;
+        throw new Error("Scramjet configuration is missing or invalid");
       }
-    );
-    configLoadPromise = trackedConfigLoad;
-  }
-  return configLoadPromise;
+      initializedConfigGeneration = generation;
+      return;
+    }
+  })().finally(function () {
+    if (configLoadPromise === trackedConfigLoad) configLoadPromise = null;
+  });
+  configLoadPromise = trackedConfigLoad;
+  return trackedConfigLoad;
+}
+
+// CacheStorage.open can require browser IPC. Coalesce simultaneous opens,
+// but do not retain the handle after it settles or across cache deletion.
+function openAssetCache() {
+  if (assetCacheOpenPromise) return assetCacheOpenPromise;
+  const job = Promise.resolve()
+    .then(function () {
+      return caches.open(ASSET_CACHE_NAME);
+    })
+    .finally(function () {
+      if (assetCacheOpenPromise === job) assetCacheOpenPromise = null;
+    });
+  assetCacheOpenPromise = job;
+  return job;
 }
 
 async function hydrateAssetCacheLedger() {
@@ -405,21 +413,33 @@ async function hydrateAssetCacheLedger() {
   if (cacheHydratePromise) return cacheHydratePromise;
   cacheHydratePromise = (async function () {
     try {
-      const cache = await caches.open(ASSET_CACHE_NAME);
+      const cache = await openAssetCache();
       const keys = await cache.keys();
       let sum = 0;
-      for (let i = 0; i < keys.length; i++) {
-        const req = keys[i];
-        const res = await cache.match(req);
-        if (!res) continue;
-        const recorded = Number(
-          res.headers.get("x-iboss-bytes") ||
-            res.headers.get("content-length") ||
-            0
+      // CacheStorage lookups may involve disk/IPC. Batch them instead of
+      // serializing every entry while keeping memory and I/O concurrency bounded.
+      const batchSize = 16;
+      for (let i = 0; i < keys.length; i += batchSize) {
+        const batch = keys.slice(i, i + batchSize);
+        const responses = await Promise.all(
+          batch.map(function (req) {
+            return cache.match(req).catch(function () {
+              return null;
+            });
+          })
         );
-        const sz = recorded > 0 ? recorded : 0;
-        lruByteMap.set(req.url, sz);
-        sum += sz;
+        for (let j = 0; j < batch.length; j++) {
+          const res = responses[j];
+          if (!res) continue;
+          const recorded = Number(
+            res.headers.get("x-iboss-bytes") ||
+              res.headers.get("content-length") ||
+              0
+          );
+          const sz = recorded > 0 ? recorded : 0;
+          lruByteMap.set(batch[j].url, sz);
+          sum += sz;
+        }
       }
       totalCachedBytes = sum;
     } catch (_e) {}
@@ -439,6 +459,7 @@ function getAssetCacheStats() {
 }
 
 async function clearAssetCache() {
+  assetCacheOpenPromise = null;
   lruByteMap.clear();
   totalCachedBytes = 0;
   assetCacheHits = 0;
@@ -456,7 +477,7 @@ function handleControlMessage(data, replyFn) {
   if (data.type === "shield") {
     shieldEnabled = Boolean(data.enabled);
   } else if (data.type === "reload-config") {
-    configLoadPromise = null;
+    configGeneration++;
   } else if (data.type === "ping") {
     if (replyFn) replyFn({ type: "pong", ts: Date.now() });
   } else if (data.type === "cache-stats") {
@@ -489,6 +510,9 @@ if (telemetryChannel) {
 }
 
 self.addEventListener("message", function (ev) {
+  if (ev.data && ev.data.scramjet$type === "loadConfig") {
+    configGeneration++;
+  }
   handleControlMessage(ev.data, function (msg) {
     if (ev.source && typeof ev.source.postMessage === "function") {
       ev.source.postMessage(msg);
@@ -655,7 +679,7 @@ async function storeInAssetCache(cacheKey, respClone) {
     const byteLen = buf.byteLength;
     if (byteLen === 0 || byteLen > MAX_SINGLE_ASSET_BYTES) return;
 
-    const cache = await caches.open(ASSET_CACHE_NAME);
+    const cache = await openAssetCache();
 
     if (lruByteMap.has(cacheKey)) {
       totalCachedBytes -= lruByteMap.get(cacheKey) || 0;
@@ -865,7 +889,7 @@ async function handleScramjetFetch(event) {
 
     if (assetCacheKey) {
       try {
-        const cache = await caches.open(ASSET_CACHE_NAME);
+        const cache = await openAssetCache();
         const cachedResp = await cache.match(assetCacheKey);
         if (cachedResp) {
           assetCacheHits++;

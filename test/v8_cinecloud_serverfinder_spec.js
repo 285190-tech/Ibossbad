@@ -46,7 +46,7 @@ function httpReq(port, method, reqPath, bodyObj, extraHeaders) {
 }
 
 // Minimal Node wrapper exposing browser-compatible WebSocket with ArrayBuffer messages
-function createBrowserWsClass(cookieHeader) {
+function createBrowserWsClass(cookieHeader, rejectFixture) {
   return function BrowserWebSocket(url) {
     var self = this;
     self.binaryType = "arraybuffer";
@@ -72,7 +72,15 @@ function createBrowserWsClass(cookieHeader) {
       if (typeof self.onclose === "function") self.onclose({});
     });
     self.send = function (u8) {
-      raw.send(Buffer.from(u8));
+      var packet = Buffer.from(u8);
+      if (rejectFixture && packet[0] === 1) {
+        packet = Buffer.concat([
+          packet.subarray(0, 6),
+          Buffer.from([69, 0]),
+          Buffer.from("127.0.0.1"),
+        ]);
+      }
+      raw.send(packet);
     };
     self.close = function () {
       try {
@@ -273,7 +281,7 @@ test("v8.0: /mgg-games/ direct mirror, broken CNAME healing, binary WISP server 
         },
         setItem: function () {},
       },
-      WebSocket: createBrowserWsClass(cookie),
+      WebSocket: createBrowserWsClass(cookie, true),
       fetch: function () {
         return Promise.reject(new Error("offline"));
       },
@@ -298,16 +306,11 @@ test("v8.0: /mgg-games/ direct mirror, broken CNAME healing, binary WISP server 
       "ws://127.0.0.1:" + port + "/wisp/",
       2500
     );
-    t.ok(
+    t.notOk(
       realProbe.ok,
-      "Real /wisp/ server passes binary WISP stream handshake"
+      "Real /wisp/ rejection of a private target is not counted as a successful probe"
     );
-    t.ok(
-      typeof realProbe.latencyMs === "number" && realProbe.latencyMs >= 1,
-      "Measures true binary WISP round-trip latency (" +
-        realProbe.latencyMs +
-        "ms)"
-    );
+    t.equal(realProbe.latencyMs, null, "Rejected streams have no latency");
 
     var fakeProbe = await sfWin.IbossServerFinder.probeWispHandshake(
       "ws://127.0.0.1:" + fakeWsPort + "/",
@@ -324,6 +327,8 @@ test("v8.0: /mgg-games/ direct mirror, broken CNAME healing, binary WISP server 
       "utf8"
     );
     var fetchListener = null;
+    var workerMessageListeners = [];
+    var sharedConfigInitialized = false;
     var nextScramjetBehavior = "throw";
     var nextScramjetConfig = "missing";
     var scramjetLoadAttempts = 0;
@@ -338,6 +343,7 @@ test("v8.0: /mgg-games/ direct mirror, broken CNAME healing, binary WISP server 
       },
       addEventListener: function (evName, fn) {
         if (evName === "fetch") fetchListener = fn;
+        if (evName === "message") workerMessageListeners.push(fn);
       },
     };
     var swCtx = {
@@ -376,6 +382,12 @@ test("v8.0: /mgg-games/ direct mirror, broken CNAME healing, binary WISP server 
         return {
           ScramjetServiceWorker: function () {
             this.config = undefined;
+            var worker = this;
+            swSelf.addEventListener("message", function (ev) {
+              if (ev.data && ev.data.scramjet$type === "loadConfig") {
+                worker.config = ev.data.config;
+              }
+            });
             this.loadConfig = function () {
               scramjetLoadAttempts++;
               // Match Scramjet's loadConfig() behavior: any truthy in-memory
@@ -388,6 +400,7 @@ test("v8.0: /mgg-games/ direct mirror, broken CNAME healing, binary WISP server 
                   prefix: "/scramjet/",
                   files: { wasm: "/scramjet.wasm.wasm" },
                 };
+                sharedConfigInitialized = true;
               } else {
                 this.config = undefined;
               }
@@ -405,6 +418,13 @@ test("v8.0: /mgg-games/ direct mirror, broken CNAME healing, binary WISP server 
               );
             };
             this.fetch = function () {
+              if (!sharedConfigInitialized) {
+                return Promise.reject(
+                  new Error(
+                    "Cannot read properties of undefined (reading 'prefix')"
+                  )
+                );
+              }
               if (nextScramjetBehavior === "throw") {
                 return Promise.reject(new Error("BareMux port disconnected"));
               }
@@ -496,13 +516,32 @@ test("v8.0: /mgg-games/ direct mirror, broken CNAME healing, binary WISP server 
     t.equal(scramjetRouteCalls, 0, "Empty config never reaches route()");
 
     nextScramjetConfig = "valid";
+    workerMessageListeners.forEach(function (listener) {
+      listener({
+        data: {
+          scramjet$type: "loadConfig",
+          config: {
+            prefix: "/scramjet/",
+            files: { wasm: "/scramjet.wasm.wasm" },
+          },
+        },
+      });
+    });
+    t.notOk(
+      sharedConfigInitialized,
+      "Controller message alone does not initialize Scramjet shared state"
+    );
     await requestScramjetNavigation(
       "https://ibossbad.onrender.com/scramjet/https%3A%2F%2Fwww.youtube.com%2F"
     );
     t.equal(
       scramjetLoadAttempts,
       3,
-      "Retries IndexedDB and loads later valid config"
+      "Loads persisted config even when a valid controller message arrived first"
+    );
+    t.ok(
+      sharedConfigInitialized,
+      "Initializes shared Scramjet state before routing"
     );
     t.equal(
       scramjetRouteCalls,
@@ -649,7 +688,11 @@ test("v8.0: /mgg-games/ direct mirror, broken CNAME healing, binary WISP server 
       /desktopModeBtn|iboss:\/\/desktop/,
       "Completely removes WebOS Desktop from browser UI"
     );
-    t.match(rootHtml, /\/ui\/server-finder\.js/, "Loads server-finder.js");
+    t.notMatch(
+      rootHtml,
+      /<script[^>]+server-finder\.js/,
+      "Server finder is loaded on demand"
+    );
     t.match(rootHtml, /\/ui\/cine-cloud\.js/, "Loads cine-cloud.js");
     t.match(
       rootHtml,
