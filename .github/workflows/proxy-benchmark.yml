@@ -52,6 +52,7 @@ jobs:
           RUNS: ${{ inputs.runs || '2' }}
           SHIELD: ${{ inputs.shield || 'off' }}
           PORT: '8080'
+          SMOKE_FAILURE: ${{ github.event_name == 'push' && '1' || '' }}
         run: |
           set -eu
           umask 077
@@ -86,13 +87,16 @@ jobs:
             } finally { await context.dispose(); }
           })().catch(() => { console.error('Could not prepare local authentication state.'); process.exitCode = 1; });
           NODE
-          if [ -n "$SITE_URL" ]; then
+          if [ -n "$SMOKE_FAILURE" ]; then
+            node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify([{category:"dead",url:"https://benchmark-does-not-exist.invalid/"},{category:"slow",url:"https://httpbin.org/delay/30"}]))' "$RUNNER_TEMP/proxy-benchmark-sites.json"
+            set -- --sites "$RUNNER_TEMP/proxy-benchmark-sites.json" --timeout-ms 5000
+          elif [ -n "$SITE_URL" ]; then
             node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify([{category: "custom", url: process.env.SITE_URL}]))' "$RUNNER_TEMP/proxy-benchmark-sites.json"
             set -- --sites "$RUNNER_TEMP/proxy-benchmark-sites.json"
           else
             set --
           fi
-          for repeat in 1 2; do
+          for repeat in $(if [ -n "$SMOKE_FAILURE" ]; then echo 1; else echo '1 2'; fi); do
             node scripts/benchmark-proxy.js --proxy http://127.0.0.1:8080 --proxy-revision "$(git rev-parse HEAD)" --runs "$RUNS" --shield "$SHIELD" --storage-state "$RUNNER_TEMP/benchmark-state.json" --output "$RUNNER_TEMP/proxy-benchmark/run-$repeat.json" "$@"
           done
       # Temporary: expose the public-site smoke output via check annotations, since
@@ -102,13 +106,12 @@ jobs:
         run: |
           node <<'NODE'
           const fs = require('fs');
-          for (const run of [1, 2]) {
-            const path = `${process.env.RUNNER_TEMP}/proxy-benchmark/run-${run}.json`;
-            if (!fs.existsSync(path)) continue;
-            const data = fs.readFileSync(path).toString('base64');
-            for (let i = 0; i < data.length; i += 2000) {
-              console.log(`::notice title=SMOKE_${run}_${i / 2000}::${data.slice(i, i + 2000)}`);
-            }
+          const path = `${process.env.RUNNER_TEMP}/proxy-benchmark/run-1.json`;
+          if (fs.existsSync(path)) {
+            const x = JSON.parse(fs.readFileSync(path));
+            const report = {complete:x.complete,summary:x.summary,runs:x.runs.map(({category,mode,phase,ok,error})=>({category,mode,phase,ok,error}))};
+            const data = Buffer.from(JSON.stringify(report)).toString('base64');
+            for (let i = 0; i < data.length; i += 2000) console.log(`::notice title=FAILURE_${i / 2000}::${data.slice(i, i + 2000)}`);
           }
           NODE
       - name: Upload benchmark JSON
