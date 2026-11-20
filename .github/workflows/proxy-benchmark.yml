@@ -36,7 +36,16 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      - name: Install Chromium
+        run: |
+          if ! npx playwright install --with-deps chromium > "$RUNNER_TEMP/browser-install.log" 2>&1; then
+            tail -30 "$RUNNER_TEMP/browser-install.log" | while IFS= read -r line; do
+              line=${line//'%'/'%25'}
+              line=${line//$'\r'/'%0D'}
+              echo "::error::$line"
+            done
+            exit 1
+          fi
       - name: Start local app and run two unthrottled repetitions
         env:
           SITE_URL: ${{ github.event_name == 'push' && 'https://example.com/' || inputs.site_url }}
