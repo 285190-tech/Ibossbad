@@ -118,7 +118,52 @@
     } catch (_e) {}
   }
 
+  // Opt-in only: expose coarse stage durations without destinations or relay URLs.
+  // Measurements end when the operation settles, not when a page finishes loading.
+  function withProxyTiming(stage, operation) {
+    var perf;
+    var started;
+    try {
+      if (
+        window.sessionStorage.getItem("ibossbad.proxyTiming") === "1" &&
+        window.performance &&
+        typeof window.performance.now === "function" &&
+        typeof window.performance.measure === "function"
+      ) {
+        perf = window.performance;
+        started = perf.now();
+      }
+    } catch (_e) {}
+    if (!perf) return operation();
+    return (async function () {
+      try {
+        return await operation();
+      } finally {
+        if (perf) {
+          try {
+            var name = "iboss.scramjet." + stage;
+            // Bound opt-in timeline growth during long sessions and relay scans.
+            if (
+              typeof perf.getEntriesByName === "function" &&
+              typeof perf.clearMeasures === "function" &&
+              perf.getEntriesByName(name, "measure").length >= 100
+            ) {
+              perf.clearMeasures(name);
+            }
+            perf.measure(name, { start: started, end: perf.now() });
+          } catch (_e2) {}
+        }
+      }
+    })();
+  }
+
   function probeWsLatency(wsUrl, timeoutMs) {
+    return withProxyTiming("relay_probe", function () {
+      return probeWsLatencyInner(wsUrl, timeoutMs);
+    });
+  }
+
+  function probeWsLatencyInner(wsUrl, timeoutMs) {
     if (
       window.IbossServerFinder &&
       typeof window.IbossServerFinder.probeWispHandshake === "function"
@@ -504,7 +549,15 @@
         });
 
         // Boot Scramjet IndexedDB controller & Service Worker registration in parallel
-        await Promise.all([controller.init(), registerAndClaimServiceWorker()]);
+        await Promise.all([
+          withProxyTiming("controller_init", function () {
+            return controller.init();
+          }),
+          withProxyTiming(
+            "service_worker_ready",
+            registerAndClaimServiceWorker
+          ),
+        ]);
 
         bareConnection = new BareMux.BareMuxConnection("/baremux/worker.js");
         bareClient = new BareMux.BareClient();
@@ -548,7 +601,9 @@
         ? [{ wisp: normUrl, wisp_v2: proto === "WISP v2" }]
         : [{ websocket: normUrl, connections: [64, 6, 32] }];
 
-      await bareConnection.setTransport(modPath, modOpts);
+      await withProxyTiming("transport_install", function () {
+        return bareConnection.setTransport(modPath, modOpts);
+      });
       activeWispUrl = normUrl;
       activeWispLabel = label || normUrl;
       activeWispLatency = latency || null;
@@ -563,90 +618,98 @@
       }
       if (transportReadyPromise) return transportReadyPromise;
 
-      transportReadyPromise = (async function () {
-        // Controller initialization can overlap the optional scanner download,
-        // but relay selection still waits for binary handshake/protocol support.
-        var finderReady =
-          typeof cb.ensureServerFinder === "function"
-            ? Promise.resolve()
-                .then(cb.ensureServerFinder)
-                .catch(function () {})
-            : Promise.resolve();
-        if (customWispUrl) {
-          var customBoot = await Promise.all([
-            ensureInitialized(),
-            finderReady.then(function () {
-              return probeWsLatency(customWispUrl, 2500);
-            }),
-          ]);
-          await setBareMuxWisp(customWispUrl, "Custom WISP", customBoot[1]);
-          return;
-        }
+      transportReadyPromise = withProxyTiming(
+        "transport_ready",
+        async function () {
+          // Controller initialization can overlap the optional scanner download,
+          // but relay selection still waits for binary handshake/protocol support.
+          var finderReady =
+            typeof cb.ensureServerFinder === "function"
+              ? Promise.resolve()
+                  .then(cb.ensureServerFinder)
+                  .catch(function () {})
+              : Promise.resolve();
+          if (customWispUrl) {
+            var customBoot = await Promise.all([
+              ensureInitialized(),
+              finderReady.then(function () {
+                return probeWsLatency(customWispUrl, 2500);
+              }),
+            ]);
+            await setBareMuxWisp(customWispUrl, "Custom WISP", customBoot[1]);
+            return;
+          }
 
-        // Instant zero-probe path if this browser session already verified a relay
-        var cachedRelay = loadCachedRelay();
-        if (cachedRelay && cachedRelay.url) {
-          var cachedProtocol = cachedRelay.protocol;
-          var hasCachedProtocol =
-            cachedProtocol === "WISP v1" || cachedProtocol === "WISP v2";
-          // Older entries lack a protocol, so they still wait for the finder.
-          // A known session protocol can select the same transport immediately;
-          // the optional finder continues loading in the background.
-          await Promise.all([
-            ensureInitialized(),
-            hasCachedProtocol ? Promise.resolve() : finderReady,
-          ]);
+          // Instant zero-probe path if this browser session already verified a relay
+          var cachedRelay = loadCachedRelay();
+          if (cachedRelay && cachedRelay.url) {
+            var cachedProtocol = cachedRelay.protocol;
+            var hasCachedProtocol =
+              cachedProtocol === "WISP v1" || cachedProtocol === "WISP v2";
+            // Older entries lack a protocol, so they still wait for the finder.
+            // A known session protocol can select the same transport immediately;
+            // the optional finder continues loading in the background.
+            await Promise.all([
+              ensureInitialized(),
+              hasCachedProtocol ? Promise.resolve() : finderReady,
+            ]);
+            await setBareMuxWisp(
+              cachedRelay.url,
+              cachedRelay.label,
+              cachedRelay.latency,
+              hasCachedProtocol ? cachedProtocol : null
+            );
+            return;
+          }
+
+          var selfUrl = getSelfWispUrl();
+
+          // Bind to Self-Hosted (/wisp/) first whenever backend has outbound internet (e.g. Render / VPS).
+          // Do NOT run unsolicited background relay swaps that tear down active page loads!
+          if (selfTunnelVerified !== false) {
+            var parallelSelf = await Promise.all([
+              ensureInitialized(),
+              finderReady.then(function () {
+                return probeWsLatency(selfUrl, 2000);
+              }),
+            ]);
+            var selfMs = parallelSelf[1];
+            if (selfMs !== null) {
+              selfTunnelVerified = true;
+              await setBareMuxWisp(
+                selfUrl,
+                "Self-Hosted (/wisp/)",
+                selfMs,
+                "WISP v1"
+              );
+              return;
+            }
+            selfTunnelVerified = false;
+          } else {
+            await Promise.all([ensureInitialized(), finderReady]);
+          }
+
+          if (allowPoolFailover) {
+            var best = await selectFastestPoolRelay(selfUrl);
+            if (best) {
+              await setBareMuxWisp(
+                best.url,
+                "Pool · " + best.label,
+                best.latency,
+                best.protocol
+              );
+              return;
+            }
+          }
+
           await setBareMuxWisp(
-            cachedRelay.url,
-            cachedRelay.label,
-            cachedRelay.latency,
-            hasCachedProtocol ? cachedProtocol : null
+            selfUrl,
+            "Self-Hosted (/wisp/)",
+            null,
+            "WISP v1"
           );
-          return;
         }
-
-        var selfUrl = getSelfWispUrl();
-
-        // Bind to Self-Hosted (/wisp/) first whenever backend has outbound internet (e.g. Render / VPS).
-        // Do NOT run unsolicited background relay swaps that tear down active page loads!
-        if (selfTunnelVerified !== false) {
-          var parallelSelf = await Promise.all([
-            ensureInitialized(),
-            finderReady.then(function () {
-              return probeWsLatency(selfUrl, 2000);
-            }),
-          ]);
-          var selfMs = parallelSelf[1];
-          if (selfMs !== null) {
-            selfTunnelVerified = true;
-            await setBareMuxWisp(
-              selfUrl,
-              "Self-Hosted (/wisp/)",
-              selfMs,
-              "WISP v1"
-            );
-            return;
-          }
-          selfTunnelVerified = false;
-        } else {
-          await Promise.all([ensureInitialized(), finderReady]);
-        }
-
-        if (allowPoolFailover) {
-          var best = await selectFastestPoolRelay(selfUrl);
-          if (best) {
-            await setBareMuxWisp(
-              best.url,
-              "Pool · " + best.label,
-              best.latency,
-              best.protocol
-            );
-            return;
-          }
-        }
-
-        await setBareMuxWisp(selfUrl, "Self-Hosted (/wisp/)", null, "WISP v1");
-      })().finally(function () {
+      ).finally(function () {
         transportReadyPromise = null;
       });
 
@@ -796,12 +859,14 @@
     }
 
     async function navigateTabFrame(tabId, iframeEl, targetUrl, onStage) {
-      if (onStage) onStage("Starting Scramjet Service Worker...");
-      await ensureTransportReady();
-      if (onStage) onStage("Tunneling via Scramjet + WISP...");
-      var sjFrame = ensureFrameForTab(tabId, iframeEl);
-      sjFrame.go(targetUrl);
-      return sjFrame;
+      return withProxyTiming("navigation_dispatch", async function () {
+        if (onStage) onStage("Starting Scramjet Service Worker...");
+        await ensureTransportReady();
+        if (onStage) onStage("Tunneling via Scramjet + WISP...");
+        var sjFrame = ensureFrameForTab(tabId, iframeEl);
+        sjFrame.go(targetUrl);
+        return sjFrame;
+      });
     }
 
     async function prewarmOrigin(targetUrl) {

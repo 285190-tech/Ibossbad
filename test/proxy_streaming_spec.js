@@ -25,6 +25,7 @@ tap.test(
       allowPrivateProxyTargets: true,
       autoLoadSupabase: false,
       skipInternetProbe: true,
+      proxyServerTiming: true,
     });
     var proxy = http.createServer(app.app);
     await new Promise(function (resolve) {
@@ -63,6 +64,7 @@ tap.test(
           res.on("end", function () {
             resolve({
               status: res.statusCode,
+              serverTiming: res.headers["server-timing"],
               body: Buffer.concat(chunks).toString(),
               streamed: gotDataBeforeEnd,
             });
@@ -76,6 +78,11 @@ tap.test(
     });
     t.equal(result.status, 200);
     t.ok(result.streamed, "received HTML while origin was still open");
+    t.match(
+      result.serverTiming,
+      /iboss_headers;dur=/,
+      "timing headers do not delay streaming"
+    );
     t.match(
       result.body,
       /__ibossSafe\(window\)\.__ibossLoc\$\.pathname/,

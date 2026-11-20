@@ -1,0 +1,96 @@
+name: Experimental proxy benchmark
+
+on:
+  # Temporary branch-only smoke trigger; remove after inspecting the artifact.
+  push:
+    branches: [arena/4723f1ba-ibossbad]
+    paths: ['.github/workflows/proxy-benchmark.yml']
+  workflow_dispatch:
+    inputs:
+      site_url:
+        description: 'Optional public test site URL; blank uses defaults'
+        required: false
+        type: string
+      runs:
+        description: 'Measured runs per site and mode per repetition (2 is a smoke test; use 10+ for comparison)'
+        default: '2'
+        required: true
+        type: string
+      shield:
+        description: 'Shield configuration'
+        default: 'off'
+        required: true
+        type: choice
+        options: ['off', 'on']
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Start local app and run two unthrottled repetitions
+        env:
+          SITE_URL: ${{ github.event_name == 'push' && 'https://example.com/' || inputs.site_url }}
+          RUNS: ${{ inputs.runs || '2' }}
+          SHIELD: ${{ inputs.shield || 'off' }}
+          PORT: '8080'
+        run: |
+          set -eu
+          umask 077
+          export PASSCODE="$(node -e 'process.stdout.write(require("crypto").randomBytes(32).toString("hex"))')"
+          echo "::add-mask::$PASSCODE"
+          export PROXY_PASSCODE="$PASSCODE"
+          export ADMIN_PASSWORD="$(node -e 'process.stdout.write(require("crypto").randomBytes(32).toString("hex"))')"
+          echo "::add-mask::$ADMIN_PASSWORD"
+          export SESSION_SECRET="$(node -e 'process.stdout.write(require("crypto").randomBytes(32).toString("hex"))')"
+          echo "::add-mask::$SESSION_SECRET"
+          export REQUIRE_AUTH=true
+          export DISABLE_PASSCODE=false
+          mkdir -p "$RUNNER_TEMP/proxy-benchmark"
+          node -e 'require("./server")({bindHost: "127.0.0.1", autoLoadSupabase: false})' > "$RUNNER_TEMP/benchmark-server.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true; rm -f "$RUNNER_TEMP/benchmark-state.json"' EXIT
+          ready=false
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --max-time 1 http://127.0.0.1:8080/api/status > /dev/null; then ready=true; break; fi
+            if ! kill -0 "$server_pid" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          if [ "$ready" != true ]; then echo 'Local app did not become ready.' >&2; exit 1; fi
+          node <<'NODE'
+          const { request } = require('playwright');
+          (async () => {
+            const context = await request.newContext({ baseURL: 'http://127.0.0.1:8080' });
+            try {
+              const response = await context.post('/api/auth/passcode', { data: { passcode: process.env.PASSCODE } });
+              if (!response.ok() || !(await response.json()).ok) throw new Error('Local app authentication failed');
+              await context.storageState({ path: process.env.RUNNER_TEMP + '/benchmark-state.json' });
+            } finally { await context.dispose(); }
+          })().catch(() => { console.error('Could not prepare local authentication state.'); process.exitCode = 1; });
+          NODE
+          if [ -n "$SITE_URL" ]; then
+            node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify([{category: "custom", url: process.env.SITE_URL}]))' "$RUNNER_TEMP/proxy-benchmark-sites.json"
+            set -- --sites "$RUNNER_TEMP/proxy-benchmark-sites.json"
+          else
+            set --
+          fi
+          for repeat in 1 2; do
+            node scripts/benchmark-proxy.js --proxy http://127.0.0.1:8080 --proxy-revision "$(git rev-parse HEAD)" --runs "$RUNS" --shield "$SHIELD" --storage-state "$RUNNER_TEMP/benchmark-state.json" --output "$RUNNER_TEMP/proxy-benchmark/run-$repeat.json" "$@"
+          done
+      - name: Upload benchmark JSON
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: experimental-proxy-benchmark
+          path: ${{ runner.temp }}/proxy-benchmark/*.json
+          if-no-files-found: warn
+          retention-days: 7

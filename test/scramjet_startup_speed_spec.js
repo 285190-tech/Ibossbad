@@ -205,3 +205,116 @@ tap.test(
     );
   }
 );
+
+tap.test(
+  "opt-in Scramjet timing records bounded, anonymous stages without altering startup",
+  async function (t) {
+    async function run(enabled, shouldFail) {
+      var dom = new JSDOM("<!doctype html>", {
+        url: "https://proxy.example/",
+        runScripts: "outside-only",
+      });
+      var win = dom.window;
+      var entries = [];
+      var clears = [];
+      if (enabled) win.sessionStorage.setItem("ibossbad.proxyTiming", "1");
+      win.performance.measure = function (name, opts) {
+        entries.push({ name: name, duration: opts.end - opts.start });
+      };
+      win.performance.getEntriesByName = function () {
+        return [];
+      };
+      win.performance.clearMeasures = function (name) {
+        clears.push(name);
+      };
+      Object.defineProperty(win.navigator, "serviceWorker", {
+        value: {
+          controller: {},
+          ready: Promise.resolve(),
+          register: async function () {
+            return { update: async function () {} };
+          },
+          addEventListener: function () {},
+        },
+      });
+      var calls = 0;
+      win.$scramjetLoadController = function () {
+        return {
+          ScramjetController: function () {
+            this.addEventListener = function () {};
+            this.init = async function () {};
+          },
+        };
+      };
+      win.BareMux = {
+        BareMuxConnection: function () {
+          this.setTransport = async function () {
+            calls++;
+            if (shouldFail) throw new Error("transport failed");
+          };
+        },
+        BareClient: function () {},
+      };
+      win.IbossServerFinder = {
+        probeWispHandshake: async function () {
+          return { ok: true, latencyMs: 2 };
+        },
+        getServerProtocol: function () {
+          return "WISP v1";
+        },
+      };
+      win.eval(
+        fs.readFileSync(
+          path.join(__dirname, "../public/scramjet-engine.js"),
+          "utf8"
+        )
+      );
+      var err;
+      try {
+        await win.IbossScramjetEngine.create({}).ensureReady();
+      } catch (e) {
+        err = e;
+      }
+      dom.window.close();
+      return { entries: entries, calls: calls, err: err, clears: clears };
+    }
+    var disabled = await run(false, false);
+    t.equal(disabled.entries.length, 0, "no timeline entries without opt-in");
+    t.equal(disabled.calls, 1, "startup still installs transport");
+    var enabled = await run(true, false);
+    var names = enabled.entries.map(function (e) {
+      return e.name;
+    });
+    [
+      "controller_init",
+      "service_worker_ready",
+      "relay_probe",
+      "transport_install",
+      "transport_ready",
+    ].forEach(function (stage) {
+      t.ok(names.indexOf("iboss.scramjet." + stage) !== -1, "reports " + stage);
+    });
+    t.ok(
+      enabled.entries.every(function (e) {
+        return (
+          Number.isFinite(e.duration) &&
+          e.duration >= 0 &&
+          e.name.indexOf("proxy.example") === -1
+        );
+      }),
+      "durations contain no destination information"
+    );
+    var failed = await run(true, true);
+    t.match(
+      failed.err.message,
+      /transport failed/,
+      "original transport failure is preserved"
+    );
+    t.ok(
+      failed.entries.some(function (e) {
+        return e.name === "iboss.scramjet.transport_install";
+      }),
+      "failed stage is measured too"
+    );
+  }
+);
