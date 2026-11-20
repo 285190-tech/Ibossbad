@@ -7,11 +7,20 @@ const os = require("os");
 const { execFileSync } = require("child_process");
 
 const DEFAULT_SITES = [
-  { category: "light", url: "https://example.com/" },
-  { category: "script-heavy", url: "https://github.com/nodejs/node" },
+  {
+    category: "light",
+    url: "https://example.com/",
+    titleIncludes: "Example Domain",
+  },
+  {
+    category: "script-heavy",
+    url: "https://github.com/nodejs/node",
+    titleIncludes: "nodejs/node",
+  },
   {
     category: "media-heavy",
     url: "https://commons.wikimedia.org/wiki/Main_Page",
+    titleIncludes: "Wikimedia Commons",
   },
 ];
 const DEFAULT_THROTTLE = { latencyMs: 40, downloadMbps: 10, uploadMbps: 5 };
@@ -33,10 +42,18 @@ function summarize(runs) {
         mode: r.mode,
         total: 0,
         failed: 0,
+        setupFailures: 0,
+        navigationAttempts: 0,
+        navigationFailures: 0,
         durations: [],
       };
     const group = groups[key];
     group.total++;
+    if (r.failureStage === "setup") group.setupFailures++;
+    else {
+      group.navigationAttempts++;
+      if (!r.ok) group.navigationFailures++;
+    }
     if (!r.ok) group.failed++;
     else if (Number.isFinite(r.elapsedMs)) group.durations.push(r.elapsedMs);
   });
@@ -47,7 +64,15 @@ function summarize(runs) {
     runs: g.total,
     failures: g.failed,
     failureRate: g.total ? g.failed / g.total : null,
+    setupFailures: g.setupFailures,
+    navigationAttempts: g.navigationAttempts,
+    navigationFailures: g.navigationFailures,
+    navigationFailureRate: g.navigationAttempts
+      ? g.navigationFailures / g.navigationAttempts
+      : null,
     successfulDurations: g.durations.length,
+    minLoadMs: g.durations.length ? Math.min(...g.durations) : null,
+    maxLoadMs: g.durations.length ? Math.max(...g.durations) : null,
     medianLoadMs: percentile(g.durations, 0.5),
     p95LoadMs: percentile(g.durations, 0.95),
   }));
@@ -84,6 +109,7 @@ function parseArgs(argv) {
     sites: DEFAULT_SITES,
     storageState: "",
     proxyRevision: null,
+    sessionProfile: "unspecified",
     output: "",
     throttle: { mode: "none", ...DEFAULT_THROTTLE },
   };
@@ -101,6 +127,7 @@ function parseArgs(argv) {
         "--sites",
         "--storage-state",
         "--proxy-revision",
+        "--session-profile",
         "--output",
         "--throttle",
         "--latency-ms",
@@ -121,6 +148,7 @@ function parseArgs(argv) {
       options.sites = JSON.parse(fs.readFileSync(value, "utf8"));
     if (key === "--storage-state") options.storageState = value;
     if (key === "--proxy-revision") options.proxyRevision = value;
+    if (key === "--session-profile") options.sessionProfile = value;
     if (key === "--output") options.output = value;
     if (key === "--throttle") options.throttle.mode = value;
     if (key === "--latency-ms") options.throttle.latencyMs = Number(value);
@@ -156,6 +184,12 @@ function parseArgs(argv) {
     options.throttle.uploadMbps <= 0
   )
     throw new Error("Invalid throttle profile.");
+  if (
+    !["unspecified", "ci-admin-rate-limit-exempt"].includes(
+      options.sessionProfile
+    )
+  )
+    throw new Error("Invalid session profile.");
   if (!Number.isInteger(options.runs) || options.runs < 1 || options.runs > 100)
     throw new Error("--runs must be an integer from 1 to 100.");
   if (
@@ -195,7 +229,13 @@ function parseArgs(argv) {
       !site.category ||
       !["http:", "https:"].includes(url.protocol) ||
       url.username ||
-      url.password
+      url.password ||
+      (site.titleIncludes !== undefined &&
+        (typeof site.titleIncludes !== "string" ||
+          !site.titleIncludes.trim())) ||
+      (site.contentIncludes !== undefined &&
+        (typeof site.contentIncludes !== "string" ||
+          !site.contentIncludes.trim()))
     )
       throw new Error(
         "Each site needs a category and an HTTP(S) URL without credentials."
@@ -207,21 +247,29 @@ function pause(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 function gitInfo() {
+  const envCommit = /^[0-9a-f]{40}$/i.test(process.env.GITHUB_SHA || "")
+    ? process.env.GITHUB_SHA
+    : null;
+  let commit = envCommit;
+  let dirty = null;
   try {
-    return {
-      commit: execFileSync("git", ["rev-parse", "HEAD"], {
+    if (!commit)
+      commit = execFileSync("git", ["rev-parse", "HEAD"], {
         encoding: "utf8",
-      }).trim(),
-      dirty: Boolean(
-        execFileSync("git", ["status", "--porcelain"], {
-          encoding: "utf8",
-        }).trim()
-      ),
-    };
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim();
+    dirty = Boolean(
+      execFileSync("git", ["status", "--porcelain"], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      }).trim()
+    );
   } catch (_e) {
-    return { commit: null, dirty: null };
+    /* CI containers can have an untrusted checkout ownership. */
   }
+  return { commit, dirty };
 }
+
 async function makeSession(browser, mode, opts) {
   const context = await browser.newContext(
     opts.storageState && mode !== "direct"
@@ -277,10 +325,16 @@ async function makeSession(browser, mode, opts) {
         timeout: opts.timeoutMs,
       });
       const status = await page.evaluate(async () => {
-        const r = await fetch("/api/status");
-        return r.json();
+        const r = await fetch("/api/status", { cache: "no-store" });
+        return { code: r.status, body: await r.json().catch(() => null) };
       });
-      if (!status.authenticated)
+      if (status.code !== 200)
+        throw new Error(
+          "Proxy status check returned HTTP " +
+            status.code +
+            (status.code === 429 ? " (rate limited)" : "")
+        );
+      if (!status.body || status.body.authenticated !== true)
         throw new Error(
           "Proxy requires authentication; supply an authorized Playwright storage state."
         );
@@ -305,6 +359,90 @@ async function collectNavigation(frame) {
     };
   });
 }
+// Only record origin and path; never record query strings or fragments from redirects.
+function finalDestination(raw, mode, proxyOrigin) {
+  try {
+    let value = raw;
+    const parsed = new URL(raw);
+    if (mode !== "direct" && parsed.origin === proxyOrigin) {
+      const prefix = mode === "stream" ? "/proxy/" : "/scramjet/";
+      if (!parsed.pathname.startsWith(prefix)) return null;
+      let token = parsed.pathname.slice(prefix.length);
+      if (token.startsWith("u1_")) {
+        const bytes = Buffer.from(token.slice(3), "base64url");
+        const key = [90, 51, 113, 25];
+        token = Buffer.from(
+          bytes.map((byte, index) => byte ^ key[index % 4])
+        ).toString("utf8");
+      } else token = decodeURIComponent(token);
+      value = token;
+    }
+    const destination = new URL(value);
+    if (
+      !["http:", "https:"].includes(destination.protocol) ||
+      destination.username ||
+      destination.password
+    )
+      return null;
+    return { origin: destination.origin, path: destination.pathname };
+  } catch (_e) {
+    return null;
+  }
+}
+
+async function inspectDocument(
+  frame,
+  mode,
+  opts,
+  site,
+  status,
+  contentEncoding
+) {
+  const destination = finalDestination(frame.url(), mode, opts.proxy);
+  const title = await frame.title().catch(() => null);
+  const body = await frame
+    .locator("body")
+    .innerText({ timeout: 3000 })
+    .catch(() => "");
+  const challenge = /Could not reach target page|Couldn't reach that site|Unable to open site|Authentication required to use proxy|Performing security verification|Just a moment\.\.\./i.test(
+    body + " " + (title || "")
+  );
+  const titlePass = site.titleIncludes
+    ? (title || "").toLowerCase().includes(site.titleIncludes.toLowerCase())
+    : null;
+  const contentPass = site.contentIncludes
+    ? body.toLowerCase().includes(site.contentIncludes.toLowerCase())
+    : null;
+  return {
+    finalOrigin: destination ? destination.origin : null,
+    finalPath: destination ? destination.path : null,
+    status: status === undefined ? null : status,
+    contentEncoding: contentEncoding === undefined ? null : contentEncoding,
+    title: title === null ? null : title.slice(0, 300),
+    contentCheck: {
+      titleIncludes: site.titleIncludes || null,
+      titlePassed: titlePass,
+      contentIncludes: site.contentIncludes || null,
+      contentPassed: contentPass,
+      nonemptyBody: Boolean(body.trim()),
+      challengeDetected: challenge,
+      passed: Boolean(
+        destination &&
+          status >= 200 &&
+          status < 400 &&
+          body.trim() &&
+          !challenge &&
+          titlePass !== false &&
+          contentPass !== false
+      ),
+      basis:
+        site.titleIncludes || site.contentIncludes
+          ? "configured-marker-and-heuristics"
+          : "nonempty-body-heuristic-only",
+    },
+  };
+}
+
 async function runOne(session, site, mode, opts, phase, iteration, order) {
   const page = session.page;
   const result = {
@@ -320,6 +458,8 @@ async function runOne(session, site, mode, opts, phase, iteration, order) {
     relay: null,
     ok: false,
     error: null,
+    failureStage: null,
+    document: null,
     elapsedMs: null,
     navigation: null,
     requests: 0,
@@ -330,10 +470,16 @@ async function runOne(session, site, mode, opts, phase, iteration, order) {
   };
   const pending = [];
   const navigationStatuses = new Map();
+  const navigationEncodings = new Map();
   const onResponse = (response) => {
     try {
-      if (response.request().isNavigationRequest())
+      if (response.request().isNavigationRequest()) {
         navigationStatuses.set(response.frame(), response.status());
+        navigationEncodings.set(
+          response.frame(),
+          response.headers()["content-encoding"] || "identity"
+        );
+      }
     } catch (_e) {
       /* Some worker responses have no frame. */
     }
@@ -375,12 +521,13 @@ async function runOne(session, site, mode, opts, phase, iteration, order) {
         waitUntil: "load",
         timeout: opts.timeoutMs,
       });
-      if (!response || response.status() >= 400)
-        throw new Error(
-          "Direct navigation returned no response or HTTP " +
-            (response ? response.status() : "unknown")
-        );
+      if (!response) throw new Error("Direct navigation returned no response.");
       frame = page.mainFrame();
+      navigationStatuses.set(frame, response.status());
+      navigationEncodings.set(
+        frame,
+        response.headers()["content-encoding"] || "identity"
+      );
       result.elapsedMs = Date.now() - start;
       stopCounting();
     } else {
@@ -408,28 +555,6 @@ async function runOne(session, site, mode, opts, phase, iteration, order) {
       await frame.waitForLoadState("load", { timeout: opts.timeoutMs });
       result.elapsedMs = Date.now() - start;
       stopCounting();
-      if (
-        navigationStatuses.has(frame) &&
-        navigationStatuses.get(frame) >= 400
-      ) {
-        throw new Error(
-          "Proxy navigation returned HTTP " + navigationStatuses.get(frame)
-        );
-      }
-      if (frame.url().startsWith("blob:"))
-        throw new Error(
-          "Proxy displayed a fallback/error frame; target load not verified."
-        );
-      const body = await frame
-        .locator("body")
-        .innerText({ timeout: 3000 })
-        .catch(() => "");
-      if (
-        /Could not reach target page|Couldn't reach that site|Unable to open site|Authentication required to use proxy|Performing security verification|Just a moment\.\.\./i.test(
-          body
-        )
-      )
-        throw new Error("Proxy displayed an error or authentication page.");
       if (mode === "scramjet") {
         result.relay = await page
           .locator("#inspectorRelayBadge")
@@ -444,9 +569,24 @@ async function runOne(session, site, mode, opts, phase, iteration, order) {
       );
     }
     result.navigation = await collectNavigation(frame).catch(() => null);
+    result.document = await inspectDocument(
+      frame,
+      mode,
+      opts,
+      site,
+      navigationStatuses.get(frame),
+      navigationEncodings.get(frame)
+    );
+    if (!result.document.contentCheck.passed) {
+      result.failureStage = "validation";
+      throw new Error(
+        "Document validation failed; see document status, location and contentCheck."
+      );
+    }
     result.ok = true;
   } catch (error) {
     if (result.elapsedMs === null) result.elapsedMs = Date.now() - start;
+    if (!result.failureStage) result.failureStage = "navigation";
     result.error = String((error && error.message) || error)
       .split("\n")[0]
       .slice(0, 500);
@@ -508,6 +648,8 @@ async function execute(browser, opts, checkpoint) {
         shield: mode === "direct" ? "not-applicable" : opts.shield,
         relay: null,
         ok: false,
+        failureStage: "setup",
+        document: null,
         error:
           "Setup failed: " +
           String((error && error.message) || error)
@@ -565,7 +707,7 @@ async function execute(browser, opts, checkpoint) {
   function report(complete) {
     const summary = summarize(runs);
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       complete,
       runnerOS: {
         platform: os.platform(),
@@ -575,6 +717,7 @@ async function execute(browser, opts, checkpoint) {
       createdAt: new Date().toISOString(),
       runnerGit: gitInfo(),
       proxyRevision: opts.proxyRevision,
+      sessionProfile: opts.sessionProfile,
       proxyOrigin: opts.proxy,
       browserVersion: browser.version(),
       cache: opts.cache,
@@ -610,7 +753,7 @@ async function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (opts.help) {
     process.stdout.write(
-      "Usage: node scripts/benchmark-proxy.js --proxy https://your-proxy.example [--runs 10] [--delay-ms 3000] [--timeout-ms 45000] [--cache warm|cold] [--shield off|on] [--sites sites.json] [--storage-state private-file.json] [--proxy-revision SHA] [--output file.json] [--throttle none|cdp] [--latency-ms 40] [--download-mbps 10] [--upload-mbps 5]\n"
+      "Usage: node scripts/benchmark-proxy.js --proxy https://your-proxy.example [--runs 10] [--delay-ms 3000] [--timeout-ms 45000] [--cache warm|cold] [--shield off|on] [--sites sites.json] [--storage-state private-file.json] [--proxy-revision SHA] [--session-profile unspecified|ci-admin-rate-limit-exempt] [--output file.json] [--throttle none|cdp] [--latency-ms 40] [--download-mbps 10] [--upload-mbps 5]\n"
     );
     return;
   }
@@ -648,4 +791,7 @@ module.exports = {
   estimateDeltas,
   execute,
   runOne,
+  finalDestination,
+  inspectDocument,
+  makeSession,
 };

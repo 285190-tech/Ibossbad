@@ -1,6 +1,10 @@
 name: Experimental proxy benchmark
 
 on:
+  # Temporary validation trigger on this branch; remove after dispatch.
+  push:
+    branches: [arena/4723f1ba-ibossbad]
+    paths: ['.github/workflows/proxy-benchmark.yml']
   workflow_dispatch:
     inputs:
       site_url:
@@ -47,9 +51,10 @@ jobs:
         timeout-minutes: 50
         env:
           SITE_URL: ${{ inputs.site_url }}
-          RUNS: ${{ inputs.runs || '2' }}
+          RUNS: ${{ github.event_name == 'push' && '10' || inputs.runs || '2' }}
           SHIELD: ${{ inputs.shield || 'off' }}
-          CACHE: ${{ inputs.cache || 'warm' }}
+          CACHE: ${{ github.event_name == 'push' && 'cold' || inputs.cache || 'warm' }}
+          CI_COMPARISON: ${{ github.event_name == 'push' && 'yes' || '' }}
           PORT: '8080'
         run: |
           set -eu
@@ -79,21 +84,35 @@ jobs:
           (async () => {
             const context = await request.newContext({ baseURL: 'http://127.0.0.1:8080' });
             try {
-              const response = await context.post('/api/auth/passcode', { data: { passcode: process.env.PASSCODE } });
+              const response = await context.post('/api/auth/passcode', { data: { passcode: process.env.ADMIN_PASSWORD } });
               if (!response.ok() || !(await response.json()).ok) throw new Error('Local app authentication failed');
+              const status = await context.get('/api/status');
+              if (!status.ok() || !(await status.json()).isAdmin) throw new Error('Local admin session not verified');
               await context.storageState({ path: process.env.RUNNER_TEMP + '/benchmark-state.json' });
             } finally { await context.dispose(); }
           })().catch(() => { console.error('Could not prepare local authentication state.'); process.exitCode = 1; });
           NODE
-          if [ -n "$SITE_URL" ]; then
+          if [ -n "$CI_COMPARISON" ]; then
+            node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify([{category:"light",url:"https://example.com/",titleIncludes:"Example Domain"},{category:"script-heavy",url:"https://github.com/nodejs/node",titleIncludes:"nodejs/node"}]))' "$RUNNER_TEMP/proxy-benchmark-sites.json"
+            set -- --sites "$RUNNER_TEMP/proxy-benchmark-sites.json" --timeout-ms 20000
+          elif [ -n "$SITE_URL" ]; then
             node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify([{category: "custom", url: process.env.SITE_URL}]))' "$RUNNER_TEMP/proxy-benchmark-sites.json"
             set -- --sites "$RUNNER_TEMP/proxy-benchmark-sites.json"
           else
             set --
           fi
           for repeat in 1 2; do
-            node scripts/benchmark-proxy.js --proxy http://127.0.0.1:8080 --proxy-revision "$(git rev-parse HEAD)" --runs "$RUNS" --shield "$SHIELD" --cache "$CACHE" --storage-state "$RUNNER_TEMP/benchmark-state.json" --output "$RUNNER_TEMP/proxy-benchmark/run-$repeat.json" "$@"
+            node scripts/benchmark-proxy.js --proxy http://127.0.0.1:8080 --proxy-revision "$GITHUB_SHA" --session-profile ci-admin-rate-limit-exempt --runs "$RUNS" --shield "$SHIELD" --cache "$CACHE" --storage-state "$RUNNER_TEMP/benchmark-state.json" --output "$RUNNER_TEMP/proxy-benchmark/run-$repeat.json" "$@"
           done
+          node <<'NODE'
+          const fs = require('fs');
+          for (const run of [1, 2]) {
+            const data = JSON.parse(fs.readFileSync(`${process.env.RUNNER_TEMP}/proxy-benchmark/run-${run}.json`));
+            if (!data.complete || data.runnerGit.commit !== process.env.GITHUB_SHA || data.proxyRevision !== process.env.GITHUB_SHA) throw new Error('Incomplete output or revision metadata mismatch');
+            if (!data.summary.length || data.summary.some((group) => group.runs !== Number(process.env.RUNS))) throw new Error('Incomplete measured groups');
+            if (data.summary.some((group) => group.setupFailures > 0)) throw new Error('Benchmark contains setup failures; inspect the artifact');
+          }
+          NODE
       - name: Upload benchmark JSON
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

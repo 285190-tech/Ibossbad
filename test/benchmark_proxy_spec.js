@@ -216,3 +216,110 @@ tap.test("cold run records fresh context policy", async (t) => {
   t.equal(result.runs.length, 3);
   t.ok(result.runs.every((run) => run.phase === "measured"));
 });
+
+tap.test("setup failures do not count as navigation failures", (t) => {
+  const base = {
+    category: "test",
+    url: "https://example.test/",
+    mode: "stream",
+    phase: "measured",
+  };
+  const summary = benchmark.summarize([
+    { ...base, ok: false, failureStage: "setup" },
+    { ...base, ok: false, failureStage: "navigation" },
+    { ...base, ok: true, elapsedMs: 20 },
+  ])[0];
+  t.equal(summary.setupFailures, 1);
+  t.equal(summary.navigationAttempts, 2);
+  t.equal(summary.navigationFailures, 1);
+  t.equal(summary.navigationFailureRate, 0.5);
+  t.equal(summary.minLoadMs, 20);
+  t.equal(summary.maxLoadMs, 20);
+  t.end();
+});
+
+tap.test(
+  "document validation records destination, status and marker failures",
+  async (t) => {
+    const target = "https://github.com/nodejs/node";
+    const key = [90, 51, 113, 25];
+    const token = Buffer.from(
+      Buffer.from(target).map((byte, i) => byte ^ key[i % 4])
+    ).toString("base64url");
+    const frame = {
+      url: () => "http://localhost:8080/scramjet/u1_" + token,
+      title: async () => "GitHub - nodejs/node",
+      locator: () => ({ innerText: async () => "nodejs node repository" }),
+    };
+    const opts = { proxy: "http://localhost:8080" };
+    const valid = await benchmark.inspectDocument(
+      frame,
+      "scramjet",
+      opts,
+      { titleIncludes: "nodejs/node" },
+      200
+    );
+    t.equal(valid.finalOrigin, "https://github.com");
+    t.equal(valid.finalPath, "/nodejs/node");
+    t.equal(valid.status, 200);
+    t.equal(valid.contentCheck.passed, true);
+    t.equal(
+      (
+        await benchmark.inspectDocument(
+          frame,
+          "scramjet",
+          opts,
+          { titleIncludes: "not there" },
+          200
+        )
+      ).contentCheck.passed,
+      false
+    );
+    t.equal(
+      (await benchmark.inspectDocument(frame, "scramjet", opts, {}, 429))
+        .contentCheck.passed,
+      false
+    );
+    t.equal(
+      (await benchmark.inspectDocument(frame, "scramjet", opts, {}, undefined))
+        .contentCheck.passed,
+      false
+    );
+    t.same(
+      benchmark.finalDestination(
+        "https://example.com/test?private=1#x",
+        "direct",
+        opts.proxy
+      ),
+      { origin: "https://example.com", path: "/test" }
+    );
+  }
+);
+
+tap.test(
+  "status 429 is not mislabeled as authentication failure",
+  async (t) => {
+    let closed = false;
+    const page = {
+      goto: async () => {},
+      evaluate: async () => ({
+        code: 429,
+        body: { error: "Rate limit exceeded" },
+      }),
+    };
+    const context = {
+      addInitScript: async () => {},
+      newPage: async () => page,
+      close: async () => {
+        closed = true;
+      },
+    };
+    const browser = { newContext: async () => context };
+    const opts = benchmark.parseArgs(["--proxy", "http://localhost:8080"]);
+    await t.rejects(
+      benchmark.makeSession(browser, "stream", opts),
+      /HTTP 429 \(rate limited\)/
+    );
+    t.equal(closed, true);
+  }
+);
