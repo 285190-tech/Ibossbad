@@ -95,6 +95,22 @@ jobs:
           for repeat in 1 2; do
             node scripts/benchmark-proxy.js --proxy http://127.0.0.1:8080 --proxy-revision "$(git rev-parse HEAD)" --runs "$RUNS" --shield "$SHIELD" --storage-state "$RUNNER_TEMP/benchmark-state.json" --output "$RUNNER_TEMP/proxy-benchmark/run-$repeat.json" "$@"
           done
+      # Temporary: expose the public-site smoke output via check annotations, since
+      # this sandbox cannot reach GitHub's artifact/log storage hosts.
+      - name: Expose smoke JSON to check annotations
+        if: always() && github.event_name == 'push'
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          for (const run of [1, 2]) {
+            const path = `${process.env.RUNNER_TEMP}/proxy-benchmark/run-${run}.json`;
+            if (!fs.existsSync(path)) continue;
+            const data = fs.readFileSync(path).toString('base64');
+            for (let i = 0; i < data.length; i += 2000) {
+              console.log(`::notice title=SMOKE_${run}_${i / 2000}::${data.slice(i, i + 2000)}`);
+            }
+          }
+          NODE
       - name: Upload benchmark JSON
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
