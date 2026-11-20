@@ -110,6 +110,7 @@ function parseArgs(argv) {
     storageState: "",
     proxyRevision: null,
     sessionProfile: "unspecified",
+    streamCompression: "unknown",
     output: "",
     throttle: { mode: "none", ...DEFAULT_THROTTLE },
   };
@@ -128,6 +129,7 @@ function parseArgs(argv) {
         "--storage-state",
         "--proxy-revision",
         "--session-profile",
+        "--stream-compression",
         "--output",
         "--throttle",
         "--latency-ms",
@@ -149,6 +151,7 @@ function parseArgs(argv) {
     if (key === "--storage-state") options.storageState = value;
     if (key === "--proxy-revision") options.proxyRevision = value;
     if (key === "--session-profile") options.sessionProfile = value;
+    if (key === "--stream-compression") options.streamCompression = value;
     if (key === "--output") options.output = value;
     if (key === "--throttle") options.throttle.mode = value;
     if (key === "--latency-ms") options.throttle.latencyMs = Number(value);
@@ -190,6 +193,8 @@ function parseArgs(argv) {
     )
   )
     throw new Error("Invalid session profile.");
+  if (!["unknown", "on", "off"].includes(options.streamCompression))
+    throw new Error("Invalid stream compression profile.");
   if (!Number.isInteger(options.runs) || options.runs < 1 || options.runs > 100)
     throw new Error("--runs must be an integer from 1 to 100.");
   if (
@@ -363,11 +368,22 @@ async function collectNavigation(frame) {
 function finalDestination(raw, mode, proxyOrigin) {
   try {
     let value = raw;
-    const parsed = new URL(raw);
-    if (mode !== "direct" && parsed.origin === proxyOrigin) {
-      const prefix = mode === "stream" ? "/proxy/" : "/scramjet/";
-      if (!parsed.pathname.startsWith(prefix)) return null;
-      let token = parsed.pathname.slice(prefix.length);
+    let destination = new URL(value);
+    // Redirect rewriting can nest proxy URLs; never report the proxy itself
+    // as the target. Bound recursion to reject malformed or cyclic wrappers.
+    for (
+      let depth = 0;
+      mode !== "direct" && destination.origin === proxyOrigin;
+      depth++
+    ) {
+      if (depth >= 8) return null;
+      const prefix = destination.pathname.startsWith("/proxy/")
+        ? "/proxy/"
+        : destination.pathname.startsWith("/scramjet/")
+        ? "/scramjet/"
+        : null;
+      if (!prefix) return null;
+      let token = destination.pathname.slice(prefix.length);
       if (token.startsWith("u1_")) {
         const bytes = Buffer.from(token.slice(3), "base64url");
         const key = [90, 51, 113, 25];
@@ -376,8 +392,8 @@ function finalDestination(raw, mode, proxyOrigin) {
         ).toString("utf8");
       } else token = decodeURIComponent(token);
       value = token;
+      destination = new URL(value);
     }
-    const destination = new URL(value);
     if (
       !["http:", "https:"].includes(destination.protocol) ||
       destination.username ||
@@ -718,6 +734,7 @@ async function execute(browser, opts, checkpoint) {
       runnerGit: gitInfo(),
       proxyRevision: opts.proxyRevision,
       sessionProfile: opts.sessionProfile,
+      streamCompression: opts.streamCompression,
       proxyOrigin: opts.proxy,
       browserVersion: browser.version(),
       cache: opts.cache,
@@ -753,7 +770,7 @@ async function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (opts.help) {
     process.stdout.write(
-      "Usage: node scripts/benchmark-proxy.js --proxy https://your-proxy.example [--runs 10] [--delay-ms 3000] [--timeout-ms 45000] [--cache warm|cold] [--shield off|on] [--sites sites.json] [--storage-state private-file.json] [--proxy-revision SHA] [--session-profile unspecified|ci-admin-rate-limit-exempt] [--output file.json] [--throttle none|cdp] [--latency-ms 40] [--download-mbps 10] [--upload-mbps 5]\n"
+      "Usage: node scripts/benchmark-proxy.js --proxy https://your-proxy.example [--runs 10] [--delay-ms 3000] [--timeout-ms 45000] [--cache warm|cold] [--shield off|on] [--sites sites.json] [--storage-state private-file.json] [--proxy-revision SHA] [--session-profile unspecified|ci-admin-rate-limit-exempt] [--stream-compression on|off|unknown] [--output file.json] [--throttle none|cdp] [--latency-ms 40] [--download-mbps 10] [--upload-mbps 5]\n"
     );
     return;
   }

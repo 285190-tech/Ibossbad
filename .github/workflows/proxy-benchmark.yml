@@ -1,6 +1,10 @@
 name: Experimental proxy benchmark
 
 on:
+  # Temporary branch-only experimental compression validation.
+  push:
+    branches: [arena/4723f1ba-ibossbad]
+    paths: ['.github/workflows/proxy-benchmark.yml']
   workflow_dispatch:
     inputs:
       site_url:
@@ -18,6 +22,12 @@ on:
         required: true
         type: choice
         options: ['warm', 'cold']
+      stream_compression:
+        description: 'Experimental Stream compression'
+        default: 'off'
+        required: true
+        type: choice
+        options: ['off', 'on']
       shield:
         description: 'Shield configuration'
         default: 'off'
@@ -47,9 +57,11 @@ jobs:
         timeout-minutes: 50
         env:
           SITE_URL: ${{ inputs.site_url }}
-          RUNS: ${{ inputs.runs || '2' }}
+          RUNS: ${{ github.event_name == 'push' && '10' || inputs.runs || '2' }}
           SHIELD: ${{ inputs.shield || 'off' }}
-          CACHE: ${{ inputs.cache || 'warm' }}
+          CACHE: ${{ github.event_name == 'push' && 'cold' || inputs.cache || 'warm' }}
+          CI_COMPARISON: ${{ github.event_name == 'push' && 'yes' || '' }}
+          STREAM_COMPRESSION: ${{ github.event_name == 'push' && 'on' || inputs.stream_compression || 'off' }}
           PORT: '8080'
         run: |
           set -eu
@@ -61,6 +73,7 @@ jobs:
           echo "::add-mask::$ADMIN_PASSWORD"
           export SESSION_SECRET="$(node -e 'process.stdout.write(require("crypto").randomBytes(32).toString("hex"))')"
           echo "::add-mask::$SESSION_SECRET"
+          if [ "$STREAM_COMPRESSION" = on ]; then export PROXY_STREAM_COMPRESSION=true; else export PROXY_STREAM_COMPRESSION=false; fi
           export REQUIRE_AUTH=true
           export DISABLE_PASSCODE=false
           mkdir -p "$RUNNER_TEMP/proxy-benchmark"
@@ -87,14 +100,17 @@ jobs:
             } finally { await context.dispose(); }
           })().catch(() => { console.error('Could not prepare local authentication state.'); process.exitCode = 1; });
           NODE
-          if [ -n "$SITE_URL" ]; then
+          if [ -n "$CI_COMPARISON" ]; then
+            node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify([{category:"light",url:"https://example.com/",titleIncludes:"Example Domain"},{category:"script-heavy",url:"https://github.com/nodejs/node",titleIncludes:"nodejs/node"}]))' "$RUNNER_TEMP/proxy-benchmark-sites.json"
+            set -- --sites "$RUNNER_TEMP/proxy-benchmark-sites.json" --timeout-ms 20000
+          elif [ -n "$SITE_URL" ]; then
             node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify([{category: "custom", url: process.env.SITE_URL}]))' "$RUNNER_TEMP/proxy-benchmark-sites.json"
             set -- --sites "$RUNNER_TEMP/proxy-benchmark-sites.json"
           else
             set --
           fi
           for repeat in 1 2; do
-            node scripts/benchmark-proxy.js --proxy http://127.0.0.1:8080 --proxy-revision "$GITHUB_SHA" --session-profile ci-admin-rate-limit-exempt --runs "$RUNS" --shield "$SHIELD" --cache "$CACHE" --storage-state "$RUNNER_TEMP/benchmark-state.json" --output "$RUNNER_TEMP/proxy-benchmark/run-$repeat.json" "$@"
+            node scripts/benchmark-proxy.js --proxy http://127.0.0.1:8080 --proxy-revision "$GITHUB_SHA" --session-profile ci-admin-rate-limit-exempt --stream-compression "$STREAM_COMPRESSION" --runs "$RUNS" --shield "$SHIELD" --cache "$CACHE" --storage-state "$RUNNER_TEMP/benchmark-state.json" --output "$RUNNER_TEMP/proxy-benchmark/run-$repeat.json" "$@"
           done
           node <<'NODE'
           const fs = require('fs');
@@ -103,6 +119,7 @@ jobs:
             if (!data.complete || data.runnerGit.commit !== process.env.GITHUB_SHA || data.proxyRevision !== process.env.GITHUB_SHA) throw new Error('Incomplete output or revision metadata mismatch');
             if (!data.summary.length || data.summary.some((group) => group.runs !== Number(process.env.RUNS))) throw new Error('Incomplete measured groups');
             if (data.summary.some((group) => group.setupFailures > 0)) throw new Error('Benchmark contains setup failures; inspect the artifact');
+            if (process.env.STREAM_COMPRESSION === 'on' && process.env.CI_COMPARISON && !data.runs.some((r) => r.category === 'light' && r.mode === 'stream' && r.ok && r.document && r.document.contentEncoding === 'gzip')) throw new Error('Expected an eligible Stream document to use gzip');
           }
           NODE
       - name: Upload benchmark JSON

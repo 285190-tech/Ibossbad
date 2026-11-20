@@ -323,3 +323,38 @@ tap.test(
     t.equal(closed, true);
   }
 );
+
+tap.test(
+  "nested proxy destinations unwrap safely and never validate the proxy itself",
+  (t) => {
+    const origin = "http://localhost:8080";
+    const key = [90, 51, 113, 25];
+    const wrap = (url) =>
+      origin +
+      "/scramjet/u1_" +
+      Buffer.from(
+        Buffer.from(url).map((byte, i) => byte ^ key[i % 4])
+      ).toString("base64url");
+    let value = "https://github.com/nodejs/node?private=1";
+    for (let i = 0; i < 4; i++) value = wrap(value);
+    t.same(benchmark.finalDestination(value, "scramjet", origin), {
+      origin: "https://github.com",
+      path: "/nodejs/node",
+    });
+    t.equal(
+      benchmark.finalDestination(
+        wrap(origin + "/not-a-target"),
+        "scramjet",
+        origin
+      ),
+      null
+    );
+    for (let i = 0; i < 5; i++) value = wrap(value);
+    t.equal(
+      benchmark.finalDestination(value, "scramjet", origin),
+      null,
+      "rejects excessive nesting"
+    );
+    t.end();
+  }
+);
