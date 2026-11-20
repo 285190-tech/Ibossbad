@@ -578,6 +578,8 @@ async function execute(browser, opts, checkpoint) {
       proxyOrigin: opts.proxy,
       browserVersion: browser.version(),
       cache: opts.cache,
+      contextMode:
+        opts.cache === "cold" ? "fresh-per-run" : "reused-per-site-and-mode",
       cacheDefinition:
         opts.cache === "warm"
           ? "Separate context per site and mode; one recorded warmup precedes measured runs."

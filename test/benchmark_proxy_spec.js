@@ -80,6 +80,7 @@ tap.test(
     t.equal(output.complete, true);
     t.equal(typeof output.runnerOS.platform, "string");
     t.equal(output.throttle.mode, "none");
+    t.equal(output.contextMode, "reused-per-site-and-mode");
     t.match(output.warmupPolicy, /excluded/);
     t.equal(output.runs.length, 12);
     t.same(
@@ -190,4 +191,28 @@ tap.test("proxy frame timeout is a retained failure", async (t) => {
   t.match(result.error, /Timeout 5000ms/);
   t.equal(benchmark.summarize([result])[0].medianLoadMs, null);
   t.equal(page.listenerCount("response"), 0);
+});
+
+tap.test("cold run records fresh context policy", async (t) => {
+  const opts = benchmark.parseArgs([
+    "--proxy",
+    "http://localhost:8080",
+    "--cache",
+    "cold",
+    "--runs",
+    "1",
+    "--delay-ms",
+    "0",
+  ]);
+  opts.sites = [{ category: "fixture", url: "https://example.test/" }];
+  const browser = {
+    version: () => "test",
+    newContext: async () => {
+      throw new Error("unavailable");
+    },
+  };
+  const result = await benchmark.execute(browser, opts);
+  t.equal(result.contextMode, "fresh-per-run");
+  t.equal(result.runs.length, 3);
+  t.ok(result.runs.every((run) => run.phase === "measured"));
 });
