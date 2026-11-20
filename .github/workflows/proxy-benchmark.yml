@@ -1,10 +1,6 @@
 name: Experimental proxy benchmark
 
 on:
-  # Temporary branch-only trigger for the ten-run cold-cache validation.
-  push:
-    branches: [arena/4723f1ba-ibossbad]
-    paths: ['.github/workflows/proxy-benchmark.yml']
   workflow_dispatch:
     inputs:
       site_url:
@@ -43,6 +39,7 @@ jobs:
           node-version: 22
       - run: npm ci
       - name: Install Chromium
+        timeout-minutes: 8
         run: |
           if ! npx playwright install --with-deps chromium > "$RUNNER_TEMP/browser-install.log" 2>&1; then
             tail -30 "$RUNNER_TEMP/browser-install.log" | while IFS= read -r line; do
@@ -55,10 +52,9 @@ jobs:
       - name: Start local app and run two unthrottled repetitions
         env:
           SITE_URL: ${{ inputs.site_url }}
-          RUNS: ${{ github.event_name == 'push' && '10' || inputs.runs || '2' }}
+          RUNS: ${{ inputs.runs || '2' }}
           SHIELD: ${{ inputs.shield || 'off' }}
-          CACHE: ${{ github.event_name == 'push' && 'cold' || inputs.cache || 'warm' }}
-          CI_COMPARISON: ${{ github.event_name == 'push' && 'yes' || '' }}
+          CACHE: ${{ inputs.cache || 'warm' }}
           PORT: '8080'
         run: |
           set -eu
@@ -94,10 +90,7 @@ jobs:
             } finally { await context.dispose(); }
           })().catch(() => { console.error('Could not prepare local authentication state.'); process.exitCode = 1; });
           NODE
-          if [ -n "$CI_COMPARISON" ]; then
-            node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify([{category:"light",url:"https://example.com/"},{category:"script-heavy",url:"https://github.com/nodejs/node"}]))' "$RUNNER_TEMP/proxy-benchmark-sites.json"
-            set -- --sites "$RUNNER_TEMP/proxy-benchmark-sites.json" --timeout-ms 20000
-          elif [ -n "$SITE_URL" ]; then
+          if [ -n "$SITE_URL" ]; then
             node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify([{category: "custom", url: process.env.SITE_URL}]))' "$RUNNER_TEMP/proxy-benchmark-sites.json"
             set -- --sites "$RUNNER_TEMP/proxy-benchmark-sites.json"
           else

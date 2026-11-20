@@ -161,3 +161,33 @@ tap.test(
     }
   }
 );
+
+tap.test("proxy frame timeout is a retained failure", async (t) => {
+  const { EventEmitter } = require("events");
+  const page = new EventEmitter();
+  const opts = benchmark.parseArgs([
+    "--proxy",
+    "http://localhost:8080",
+    "--timeout-ms",
+    "5000",
+  ]);
+  page.evaluate = async () => {};
+  page.locator = () => ({ fill: async () => {}, evaluate: async () => {} });
+  page.waitForEvent = async (_event, options) => {
+    t.equal(options.timeout, 5000);
+    throw new Error("page.waitForEvent: Timeout 5000ms exceeded");
+  };
+  const result = await benchmark.runOne(
+    { page, warmupSucceeded: false },
+    { category: "slow", url: "https://example.test/" },
+    "stream",
+    opts,
+    "measured",
+    1,
+    1
+  );
+  t.equal(result.ok, false);
+  t.match(result.error, /Timeout 5000ms/);
+  t.equal(benchmark.summarize([result])[0].medianLoadMs, null);
+  t.equal(page.listenerCount("response"), 0);
+});
