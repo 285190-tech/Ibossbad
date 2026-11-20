@@ -1,10 +1,6 @@
 name: Experimental proxy benchmark
 
 on:
-  # Temporary comparison trigger on this branch; remove before merge.
-  push:
-    branches: [arena/4723f1ba-ibossbad]
-    paths: ['.github/workflows/proxy-benchmark.yml']
   workflow_dispatch:
     inputs:
       site_url:
@@ -51,10 +47,9 @@ jobs:
         timeout-minutes: 50
         env:
           SITE_URL: ${{ inputs.site_url }}
-          RUNS: ${{ github.event_name == 'push' && '10' || inputs.runs || '2' }}
+          RUNS: ${{ inputs.runs || '2' }}
           SHIELD: ${{ inputs.shield || 'off' }}
-          CACHE: ${{ github.event_name == 'push' && 'cold' || inputs.cache || 'warm' }}
-          CI_COMPARISON: ${{ github.event_name == 'push' && 'yes' || '' }}
+          CACHE: ${{ inputs.cache || 'warm' }}
           PORT: '8080'
         run: |
           set -eu
@@ -90,10 +85,7 @@ jobs:
             } finally { await context.dispose(); }
           })().catch(() => { console.error('Could not prepare local authentication state.'); process.exitCode = 1; });
           NODE
-          if [ -n "$CI_COMPARISON" ]; then
-            node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify([{category:"light",url:"https://example.com/"},{category:"script-heavy",url:"https://github.com/nodejs/node"}]))' "$RUNNER_TEMP/proxy-benchmark-sites.json"
-            set -- --sites "$RUNNER_TEMP/proxy-benchmark-sites.json" --timeout-ms 20000
-          elif [ -n "$SITE_URL" ]; then
+          if [ -n "$SITE_URL" ]; then
             node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify([{category: "custom", url: process.env.SITE_URL}]))' "$RUNNER_TEMP/proxy-benchmark-sites.json"
             set -- --sites "$RUNNER_TEMP/proxy-benchmark-sites.json"
           else
