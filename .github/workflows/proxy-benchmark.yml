@@ -1,6 +1,10 @@
 name: Experimental proxy benchmark
 
 on:
+  # Temporary branch-only navigation diagnostic.
+  push:
+    branches: [arena/4723f1ba-ibossbad]
+    paths: ['.github/workflows/proxy-benchmark.yml']
   workflow_dispatch:
     inputs:
       site_url:
@@ -52,10 +56,11 @@ jobs:
       - name: Start local app and run two unthrottled repetitions
         timeout-minutes: 50
         env:
-          SITE_URL: ${{ inputs.site_url }}
-          RUNS: ${{ inputs.runs || '2' }}
+          SITE_URL: ${{ github.event_name == 'push' && 'https://github.com/nodejs/node' || inputs.site_url }}
+          RUNS: ${{ github.event_name == 'push' && '1' || inputs.runs || '2' }}
           SHIELD: ${{ inputs.shield || 'off' }}
-          CACHE: ${{ inputs.cache || 'warm' }}
+          CACHE: ${{ github.event_name == 'push' && 'cold' || inputs.cache || 'warm' }}
+          TRACE: ${{ github.event_name == 'push' && 'yes' || '' }}
           STREAM_COMPRESSION: ${{ inputs.stream_compression || 'off' }}
           PORT: '8080'
         run: |
@@ -104,6 +109,7 @@ jobs:
           for repeat in 1 2; do
             node scripts/benchmark-proxy.js --proxy http://127.0.0.1:8080 --proxy-revision "$GITHUB_SHA" --session-profile ci-admin-rate-limit-exempt --stream-compression "$STREAM_COMPRESSION" --runs "$RUNS" --shield "$SHIELD" --cache "$CACHE" --storage-state "$RUNNER_TEMP/benchmark-state.json" --output "$RUNNER_TEMP/proxy-benchmark/run-$repeat.json" "$@"
           done
+          if [ -n "$TRACE" ]; then node scripts/scramjet-navigation-trace.js; fi
           node <<'NODE'
           const fs = require('fs');
           for (const run of [1, 2]) {
