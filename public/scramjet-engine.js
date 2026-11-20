@@ -445,6 +445,86 @@
           codec: {
             encode: function (str) {
               if (!str) return str;
+              // Scramjet may receive an already-proxied same-origin URL from
+              // History API calls. Unwrap only our own encoded paths before
+              // re-encoding, so repeated same-document navigation is idempotent.
+              // This function is serialized into IndexedDB and reconstructed
+              // in multiple realms, so it must not close over outer variables.
+              try {
+                var candidate = String(str);
+                var origin = typeof location !== "undefined" && location.origin;
+                var localPrefix = origin && origin + "/scramjet/u1_";
+                for (
+                  var depth = 0;
+                  localPrefix &&
+                  candidate.indexOf(localPrefix) === 0 &&
+                  depth < 8;
+                  depth++
+                ) {
+                  var parsed = new URL(candidate);
+                  if (
+                    parsed.origin !== origin ||
+                    parsed.pathname.indexOf("/scramjet/u1_") !== 0
+                  )
+                    break;
+                  var token = parsed.pathname.slice("/scramjet/u1_".length);
+                  if (!/^[A-Za-z0-9_-]+$/.test(token)) break;
+                  var alphabet =
+                    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+                  var decodedBytes = [];
+                  for (var n = 0; n < token.length; n += 4) {
+                    var a = alphabet.indexOf(token.charAt(n));
+                    var b = alphabet.indexOf(token.charAt(n + 1));
+                    var c =
+                      n + 2 < token.length
+                        ? alphabet.indexOf(token.charAt(n + 2))
+                        : -1;
+                    var d =
+                      n + 3 < token.length
+                        ? alphabet.indexOf(token.charAt(n + 3))
+                        : -1;
+                    if (a < 0 || b < 0)
+                      throw new Error("Invalid Scramjet token");
+                    decodedBytes.push((a << 2) | (b >> 4));
+                    if (c >= 0) decodedBytes.push(((b & 15) << 4) | (c >> 2));
+                    if (d >= 0) decodedBytes.push(((c & 3) << 6) | d);
+                  }
+                  var xorKey = [90, 51, 113, 25];
+                  var encodedUtf8 = "";
+                  for (var q = 0; q < decodedBytes.length; q++) {
+                    var byte = (decodedBytes[q] ^ xorKey[q & 3]) & 255;
+                    encodedUtf8 +=
+                      "%" + (byte < 16 ? "0" : "") + byte.toString(16);
+                  }
+                  var decodedUrl = decodeURIComponent(encodedUtf8);
+                  var parsedTarget = new URL(decodedUrl);
+                  if (
+                    parsedTarget.protocol !== "http:" &&
+                    parsedTarget.protocol !== "https:"
+                  )
+                    break;
+                  if (parsed.search) {
+                    var hashIndex = decodedUrl.indexOf("#");
+                    var beforeHash =
+                      hashIndex < 0
+                        ? decodedUrl
+                        : decodedUrl.slice(0, hashIndex);
+                    var afterHash =
+                      hashIndex < 0 ? "" : decodedUrl.slice(hashIndex);
+                    decodedUrl =
+                      beforeHash +
+                      (beforeHash.indexOf("?") === -1 ? "?" : "&") +
+                      parsed.search.slice(1) +
+                      afterHash;
+                  }
+                  candidate = parsed.hash
+                    ? decodedUrl.split("#")[0] + parsed.hash
+                    : decodedUrl;
+                }
+                if (candidate !== String(str)) str = candidate;
+              } catch (_err) {
+                /* Preserve the original input if it cannot be safely decoded. */
+              }
               var B64 =
                 "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
               var key = [90, 51, 113, 25];

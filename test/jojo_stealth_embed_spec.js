@@ -187,6 +187,51 @@ test("Scramjet u1_ stealth codec & Service Worker decodeScramjetTarget preserve 
       "Stealth codec round-trips JoJo URL with %3A colons intact"
     );
 
+    // Scramjet reconstructs this codec in both the browser and worker realms.
+    var realmEncode = vm.runInNewContext(
+      "(" + capturedCodec.encode.toString() + ")",
+      {
+        URL: URL,
+        location: { origin: "https://study.example" },
+      }
+    );
+    var proxyPrefix = "https://study.example/scramjet/";
+    var target = "https://github.com/nodejs/node?foo=bar%3Abaz";
+    var once = proxyPrefix + realmEncode(target);
+    var twice = proxyPrefix + realmEncode(once);
+    t.equal(
+      twice,
+      once,
+      "already wrapped same-origin URL is not encoded again"
+    );
+    t.equal(
+      isolatedDecode(realmEncode(twice)),
+      target,
+      "repeated history rewrite keeps the original target and query"
+    );
+    t.equal(
+      isolatedDecode(realmEncode(once + "?more=two")),
+      target + "&more=two",
+      "outer query parameters are preserved"
+    );
+    t.equal(
+      isolatedDecode(realmEncode(once + "#section")),
+      target + "#section",
+      "outer fragment is preserved"
+    );
+    var otherOrigin = "https://other.example/scramjet/" + realmEncode(target);
+    t.equal(
+      isolatedDecode(realmEncode(otherOrigin)),
+      otherOrigin,
+      "other origins are not unwrapped"
+    );
+    var invalid = proxyPrefix + "u1_invalid!";
+    t.equal(
+      isolatedDecode(realmEncode(invalid)),
+      invalid,
+      "malformed tokens are not unwrapped"
+    );
+
     // Verify public/sw.js decodeScramjetTarget handles both u1_ and legacy URLs
     var swCode = fs.readFileSync(
       path.join(__dirname, "../public/sw.js"),
