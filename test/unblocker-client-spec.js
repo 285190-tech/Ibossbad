@@ -89,3 +89,69 @@ testCases.forEach((tc) => {
 });
 
 // todo: something about cookies and subdomains
+
+test("encoded proxy navigation resolves dynamic URLs using injected target", (t) => {
+  const encodedLocation = new URL(
+    "https://proxy.example/proxy/u1_c29tZXRva2Vu?extra=1"
+  );
+  const remoteConfig = {
+    prefix: "/proxy/",
+    url: "https://target.example/section/page?extra=1",
+  };
+  t.equal(
+    fixUrl("/cdn-cgi/challenge-platform/test", remoteConfig, encodedLocation),
+    "/proxy/https://target.example/cdn-cgi/challenge-platform/test",
+    "root-relative request uses upstream origin"
+  );
+  t.equal(
+    fixUrl("./asset.js", remoteConfig, encodedLocation),
+    "/proxy/https://target.example/section/asset.js",
+    "relative request uses upstream page directory"
+  );
+  t.equal(
+    fixUrl("https://proxy.example/challenge", remoteConfig, encodedLocation),
+    "/proxy/https://target.example/challenge",
+    "proxy host references are mapped to upstream host"
+  );
+  t.equal(
+    fixUrl("https://elsewhere.example/file", remoteConfig, encodedLocation),
+    "/proxy/https://elsewhere.example/file",
+    "absolute external URLs continue to work"
+  );
+  t.end();
+});
+
+test("encoded navigation patches fetch and exposes the correct virtual location", async (t) => {
+  const JSDOM = require("jsdom").JSDOM;
+  const dom = new JSDOM("<!doctype html><html><body></body></html>", {
+    url: "https://proxy.example/proxy/u1_c29tZXRva2Vu",
+    runScripts: "outside-only",
+  });
+  const win = dom.window;
+  t.teardown(() => win.close());
+  let requested;
+  win.fetch = (url) => {
+    requested = url;
+    return Promise.resolve({ ok: true });
+  };
+  initForWindow(
+    { prefix: "/proxy/", url: "https://target.example/section/page" },
+    win
+  );
+  await win.fetch("/cdn-cgi/challenge-platform/fixture");
+  t.equal(
+    requested,
+    "/proxy/https://target.example/cdn-cgi/challenge-platform/fixture",
+    "fetch is sent to the intended origin"
+  );
+  t.equal(
+    win.__ibossLoc.hostname,
+    "target.example",
+    "virtual location uses the real upstream hostname"
+  );
+  t.equal(
+    win.__ibossLoc.pathname,
+    "/section/page",
+    "virtual location retains upstream path"
+  );
+});

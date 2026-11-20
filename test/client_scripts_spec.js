@@ -20,7 +20,7 @@ test("client script middleware tolerates missing config and defaults the prefix"
       var html = body.toString();
       t.match(
         html,
-        /src="\/proxy\/client\/unblocker-client\.js"/,
+        /src="\/proxy\/client\/unblocker-client\.js\?v=2"/,
         "the default client script URL uses the standard proxy prefix"
       );
       t.match(

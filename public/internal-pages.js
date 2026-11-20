@@ -2147,11 +2147,301 @@
       return true;
     }
 
+    function renderStudyHub(container) {
+      var platforms = [
+        {
+          name: "Khan Academy",
+          category: "Learning",
+          mark: "K",
+          color: "mint",
+          url: "https://www.khanacademy.org/",
+          description: "Practice skills and explore lessons at your own pace.",
+        },
+        {
+          name: "Google Classroom",
+          category: "Classroom",
+          mark: "G",
+          color: "gold",
+          url: "https://classroom.google.com/",
+          description: "Find class announcements, assignments, and materials.",
+        },
+        {
+          name: "Quizlet",
+          category: "Flashcards",
+          mark: "Q",
+          color: "blue",
+          url: "https://quizlet.com/",
+          description:
+            "Review flashcards and study sets for your next session.",
+        },
+        {
+          name: "Blooket",
+          category: "Practice",
+          mark: "B",
+          color: "pink",
+          url: "https://www.blooket.com/",
+          description: "Join a game or review your classroom practice sets.",
+        },
+        {
+          name: "Kahoot!",
+          category: "Practice",
+          mark: "K!",
+          color: "purple",
+          url: "https://kahoot.it/",
+          description: "Join a live quiz and practice with your class.",
+        },
+        {
+          name: "IXL",
+          category: "Learning",
+          mark: "IXL",
+          color: "orange",
+          url: "https://www.ixl.com/",
+          description: "Open your personalized skill practice and lessons.",
+        },
+        {
+          name: "DeltaMath",
+          category: "Math",
+          mark: "Δ",
+          color: "blue",
+          url: "https://www.deltamath.com/",
+          description: "Access your math assignments and practice problems.",
+        },
+        {
+          name: "Edpuzzle",
+          category: "Video",
+          mark: "E",
+          color: "pink",
+          url: "https://edpuzzle.com/",
+          description: "Watch assigned videos and review their questions.",
+        },
+        {
+          name: "Gimkit",
+          category: "Practice",
+          mark: "G",
+          color: "mint",
+          url: "https://www.gimkit.com/",
+          description: "Jump into a classroom game or independent practice.",
+        },
+        {
+          name: "Canvas",
+          category: "Classroom",
+          mark: "C",
+          color: "orange",
+          url: "https://www.instructure.com/canvas",
+          description: "Find your institution's Canvas learning platform.",
+        },
+      ];
+      var taskKey = "ibossbad.studyTasks.v1";
+      var tasks = [];
+      try {
+        var saved = JSON.parse(localStorage.getItem(taskKey) || "[]");
+        if (Array.isArray(saved))
+          tasks = saved
+            .filter(function (task) {
+              return (
+                task &&
+                typeof task.text === "string" &&
+                task.text.length <= 200 &&
+                typeof task.done === "boolean"
+              );
+            })
+            .slice(0, 100);
+      } catch (_e) {}
+      var selected = platforms[0];
+      container.innerHTML =
+        '<div class="study-hub"><div class="study-intro">' +
+        '<div class="study-kicker"><span class="study-kicker-dot"></span> YOUR STUDY SPACE</div>' +
+        "<h1>Make space for <span>better learning.</span></h1>" +
+        "<p>Your classes, favorite tools, and next steps — all in one calm place.</p>" +
+        '<div class="study-intro-actions"><button type="button" class="study-primary" data-study-focus>Start a focus session <span>↗</span></button><button type="button" class="study-secondary" data-study-explore>Explore platforms <span>↓</span></button></div>' +
+        '<div class="study-intro-meta"><span>✦ Built for your workflow</span><span>◷ Your plan stays on this device</span></div></div>' +
+        '<div class="study-layout"><main class="study-main"><section class="study-platforms" id="study-platforms">' +
+        '<div class="study-section-heading"><div><div class="study-eyebrow">YOUR SHORTCUTS</div><h2>Pick up where you left off.</h2><p>Choose a platform to get started.</p></div><span class="study-count">10 PLATFORMS</span></div>' +
+        '<label class="study-search"><span aria-hidden="true">⌕</span><input type="search" id="studySearch" placeholder="Search platforms" aria-label="Search study platforms"></label>' +
+        '<div class="study-feature" id="studyFeature"></div><div class="study-grid" id="studyGrid"></div><p class="study-empty hidden" id="studyEmpty">No platforms match that search.</p>' +
+        '</section></main><aside class="study-sidebar"><section class="study-plan"><div class="study-plan-head"><div><div class="study-eyebrow">ONE THING AT A TIME</div><h2>Today’s plan</h2></div><span class="study-plan-icon">✳</span></div>' +
+        '<p>A little progress adds up. What are you working on?</p><form id="studyTaskForm" class="study-task-form"><label class="study-sr-only" for="studyTaskInput">Add a task</label><input id="studyTaskInput" maxlength="200" autocomplete="off" placeholder="Add a task…" required><button type="submit" aria-label="Add task">＋</button></form>' +
+        '<div id="studyTasks" class="study-tasks"></div><div class="study-task-foot"><span id="studyTaskCount"></span><button type="button" id="studyClearDone">Clear completed</button></div></section>' +
+        '<section class="study-note"><div class="study-note-icon">✦</div><h3>Take it at your pace.</h3><p>Plan a session, open your tools, and make time for a break. You’ve got this.</p><button type="button" data-study-focus>Open focus timer <span>↗</span></button></section>' +
+        '<p class="study-disclaimer">Platform links open in the proxy. Availability and sign-in depend on each site. No assignments are completed automatically.</p></aside></div></div>';
+      var grid = container.querySelector("#studyGrid");
+      var feature = container.querySelector("#studyFeature");
+      var search = container.querySelector("#studySearch");
+      var taskList = container.querySelector("#studyTasks");
+      function openPlatform(platform) {
+        if (hooks.openUrl) hooks.openUrl(platform.url, true);
+      }
+      function drawFeature() {
+        feature.innerHTML =
+          '<div class="study-feature-mark study-mark-' +
+          selected.color +
+          '">' +
+          esc(selected.mark) +
+          '</div><div class="study-feature-copy"><span class="study-feature-label">SELECTED PLATFORM</span><h3>' +
+          esc(selected.name) +
+          "</h3><p>" +
+          esc(selected.description) +
+          '</p></div><button type="button" class="study-primary study-open">Open platform <span>↗</span></button>';
+        feature
+          .querySelector(".study-open")
+          .addEventListener("click", function () {
+            openPlatform(selected);
+          });
+      }
+      function drawPlatforms() {
+        var q = search.value.trim().toLowerCase();
+        grid.innerHTML = "";
+        var filtered = platforms.filter(function (platform) {
+          return (
+            (platform.name + " " + platform.category)
+              .toLowerCase()
+              .indexOf(q) !== -1
+          );
+        });
+        container
+          .querySelector("#studyEmpty")
+          .classList.toggle("hidden", filtered.length !== 0);
+        filtered.forEach(function (platform) {
+          var card = document.createElement("button");
+          card.type = "button";
+          card.className =
+            "study-platform-card" + (selected === platform ? " selected" : "");
+          card.setAttribute(
+            "aria-pressed",
+            selected === platform ? "true" : "false"
+          );
+          card.innerHTML =
+            '<span class="study-card-mark study-mark-' +
+            platform.color +
+            '">' +
+            esc(platform.mark) +
+            '</span><span class="study-card-copy"><strong>' +
+            esc(platform.name) +
+            "</strong><small>" +
+            esc(platform.category) +
+            '</small></span><span class="study-card-arrow" aria-hidden="true">↗</span>';
+          card.addEventListener("click", function () {
+            selected = platform;
+            drawFeature();
+            drawPlatforms();
+          });
+          grid.appendChild(card);
+        });
+      }
+      function saveTasks() {
+        try {
+          localStorage.setItem(taskKey, JSON.stringify(tasks));
+          return true;
+        } catch (_e) {
+          if (hooks.toast)
+            hooks.toast("Unable to save your study plan on this device.");
+          return false;
+        }
+      }
+      function drawTasks() {
+        taskList.innerHTML = "";
+        if (!tasks.length) {
+          var empty = document.createElement("p");
+          empty.className = "study-task-empty";
+          empty.textContent = "Your list is clear. Add your first task above.";
+          taskList.appendChild(empty);
+        }
+        tasks.forEach(function (task, index) {
+          var row = document.createElement("div");
+          row.className = "study-task" + (task.done ? " done" : "");
+          var label = document.createElement("label");
+          var checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.checked = task.done;
+          var text = document.createElement("span");
+          text.textContent = task.text;
+          label.appendChild(checkbox);
+          label.appendChild(text);
+          checkbox.addEventListener("change", function () {
+            task.done = checkbox.checked;
+            saveTasks();
+            drawTasks();
+          });
+          var remove = document.createElement("button");
+          remove.type = "button";
+          remove.textContent = "×";
+          remove.setAttribute("aria-label", "Remove " + task.text);
+          remove.addEventListener("click", function () {
+            tasks.splice(index, 1);
+            saveTasks();
+            drawTasks();
+          });
+          row.appendChild(label);
+          row.appendChild(remove);
+          taskList.appendChild(row);
+        });
+        var remaining = tasks.filter(function (task) {
+          return !task.done;
+        }).length;
+        container.querySelector("#studyTaskCount").textContent =
+          remaining + (remaining === 1 ? " task left" : " tasks left");
+        container.querySelector("#studyClearDone").disabled = !tasks.some(
+          function (task) {
+            return task.done;
+          }
+        );
+      }
+      container
+        .querySelector("#studyTaskForm")
+        .addEventListener("submit", function (event) {
+          event.preventDefault();
+          var input = container.querySelector("#studyTaskInput");
+          var text = input.value.trim();
+          if (!text) return;
+          if (tasks.length >= 100) {
+            if (hooks.toast)
+              hooks.toast("Your study plan is full. Remove a task first.");
+            return;
+          }
+          tasks.push({ text: text, done: false });
+          input.value = "";
+          saveTasks();
+          drawTasks();
+          input.focus();
+        });
+      container
+        .querySelector("#studyClearDone")
+        .addEventListener("click", function () {
+          tasks = tasks.filter(function (task) {
+            return !task.done;
+          });
+          saveTasks();
+          drawTasks();
+        });
+      container
+        .querySelectorAll("[data-study-focus]")
+        .forEach(function (button) {
+          button.addEventListener("click", function () {
+            if (hooks.navigate) hooks.navigate("iboss://focus");
+          });
+        });
+      container
+        .querySelector("[data-study-explore]")
+        .addEventListener("click", function () {
+          search.focus();
+          if (search.scrollIntoView)
+            search.scrollIntoView({ behavior: "smooth", block: "center" });
+        });
+      search.addEventListener("input", drawPlatforms);
+      drawFeature();
+      drawPlatforms();
+      drawTasks();
+    }
+
     function render(url, container) {
       var clean = String(url || "")
         .toLowerCase()
         .trim();
       var renderToken = ++lazyPageRenderToken;
+      if (clean === "iboss://study") {
+        renderStudyHub(container);
+        return true;
+      }
       if (clean === "iboss://games") {
         renderGamesHub(container);
         return true;

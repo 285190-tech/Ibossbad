@@ -1833,8 +1833,15 @@
     // Handle postMessage RPC requests from inside Blob iframes
     window.addEventListener("message", function (ev) {
       var d = ev.data;
-      if (!d || !d.__ibossWisp) return;
+      if (
+        !d ||
+        !d.__ibossWisp ||
+        typeof cb.isTabMessageSource !== "function" ||
+        !cb.isTabMessageSource(d.tabId, ev.source, ev.origin)
+      )
+        return;
       var srcWin = ev.source;
+      var socketKey = String(d.tabId) + ":" + String(d.wsId);
 
       if (d.action === "navigate" && typeof cb.onNavigate === "function") {
         cb.onNavigate(d.tabId, d.url, false);
@@ -1860,10 +1867,11 @@
       if (d.action === "ws:open") {
         ensureConnected()
           .then(function () {
+            if (!cb.isTabMessageSource(d.tabId, srcWin, ev.origin)) return;
             var lc = getLibcurl();
             var rws = new lc.WebSocket(d.url, d.protocols || []);
             rws.binaryType = "arraybuffer";
-            openWebSockets.set(d.wsId, rws);
+            openWebSockets.set(socketKey, rws);
             rws.addEventListener("open", function () {
               if (srcWin) {
                 srcWin.postMessage(
@@ -1908,7 +1916,9 @@
               }
             });
             rws.addEventListener("close", function (cev) {
-              openWebSockets.delete(d.wsId);
+              if (openWebSockets.get(socketKey) === rws) {
+                openWebSockets.delete(socketKey);
+              }
               if (srcWin) {
                 srcWin.postMessage(
                   {
@@ -1935,7 +1945,7 @@
       }
 
       if (d.action === "ws:send") {
-        var sock = openWebSockets.get(d.wsId);
+        var sock = openWebSockets.get(socketKey);
         if (sock) {
           try {
             sock.send(d.isBinary ? new Uint8Array(d.data) : d.data);
@@ -1945,9 +1955,9 @@
       }
 
       if (d.action === "ws:close") {
-        var sockClose = openWebSockets.get(d.wsId);
+        var sockClose = openWebSockets.get(socketKey);
         if (sockClose) {
-          openWebSockets.delete(d.wsId);
+          openWebSockets.delete(socketKey);
           try {
             sockClose.close(d.code || 1000, d.reason || "");
           } catch (_e) {}

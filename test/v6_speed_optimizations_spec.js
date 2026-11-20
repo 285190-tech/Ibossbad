@@ -223,7 +223,7 @@ test("v6.0 Speed Suite: Brotli/Gzip static WASM compression, ETag 304, WISP tuni
       "Acorn is loaded only when WISP is used"
     );
     t.ok(
-      browserApp.indexOf('loadScriptOnce("/ui/internal-pages.js?v=19")') !==
+      browserApp.indexOf('loadScriptOnce("/ui/internal-pages.js?v=20")') !==
         -1 &&
         browserApp.indexOf('loadScriptOnce("/ui/admin-panel.js?v=15")') !== -1,
       "internal pages and admin UI are loaded only when opened"
@@ -266,8 +266,8 @@ test("v6.0 Speed Suite: Brotli/Gzip static WASM compression, ETag 304, WISP tuni
       statusJson.speed &&
         statusJson.speed.libcurlHash &&
         statusJson.speed.epoxyHash &&
-        statusJson.speed.dnsCache,
-      "/api/status exposes speed hints & DNS cache stats"
+        !statusJson.speed.dnsCache,
+      "/api/status exposes transport hashes without public DNS cache stats"
     );
 
     // 7. Authenticated /wisp/ upgrade strips permessage-deflate & sets TCP_NODELAY

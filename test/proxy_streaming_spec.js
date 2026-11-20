@@ -93,3 +93,70 @@ tap.test(
     );
   }
 );
+
+tap.test(
+  "charset-less large HTML streams through proxy before upstream ends",
+  async function (t) {
+    var finishOrigin;
+    var upstream = http.createServer(function (_req, res) {
+      res.writeHead(200, { "Content-Type": "text/html" });
+      res.write("<html><body>" + "plain text ".repeat(7000));
+      finishOrigin = function () {
+        res.end("tail</body></html>");
+      };
+    });
+    await new Promise(function (resolve) {
+      upstream.listen(0, "127.0.0.1", resolve);
+    });
+    var app = createApp({
+      authRequired: false,
+      allowPrivateProxyTargets: true,
+      autoLoadSupabase: false,
+      skipInternetProbe: true,
+    });
+    var proxy = http.createServer(app.app);
+    await new Promise(function (resolve) {
+      proxy.listen(0, "127.0.0.1", resolve);
+    });
+    t.teardown(function () {
+      if (finishOrigin) finishOrigin();
+      return Promise.all([
+        new Promise(function (resolve) {
+          upstream.close(resolve);
+        }),
+        new Promise(function (resolve) {
+          proxy.close(resolve);
+        }),
+      ]);
+    });
+    var result = await new Promise(function (resolve, reject) {
+      var req = http.get(
+        {
+          host: "127.0.0.1",
+          port: proxy.address().port,
+          path: "/proxy/http://127.0.0.1:" + upstream.address().port + "/",
+          headers: { accept: "text/html" },
+        },
+        function (res) {
+          var chunks = [];
+          res.on("data", function (data) {
+            chunks.push(data);
+            if (finishOrigin) {
+              finishOrigin();
+              finishOrigin = null;
+            }
+          });
+          res.on("end", function () {
+            resolve(Buffer.concat(chunks).toString("utf8"));
+          });
+        }
+      );
+      req.setTimeout(2000, function () {
+        req.destroy(new Error("response was buffered until origin end"));
+      });
+      req.on("error", reject);
+    });
+    t.match(result, /plain text/, "body streamed while origin was open");
+    t.match(result, /tail<\/body>/, "remaining response arrived intact");
+  }
+);

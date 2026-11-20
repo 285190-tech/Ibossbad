@@ -471,7 +471,7 @@
   function ensureInternalPages() {
     if (internalPages) return Promise.resolve(internalPages);
     if (!internalPagesLoadPromise) {
-      internalPagesLoadPromise = loadScriptOnce("/ui/internal-pages.js?v=19")
+      internalPagesLoadPromise = loadScriptOnce("/ui/internal-pages.js?v=20")
         .then(() => {
           internalPages = createInternalPagesController();
           return internalPages;
@@ -580,6 +580,22 @@
     }
     wispEngine = window.IbossWispEngine.create({
       loadLibcurl: () => loadScriptOnce("/vendor/libcurl/libcurl.js"),
+      isTabMessageSource: (tabId, source, origin) => {
+        const tab = state.tabs.find((item) => item.id === tabId);
+        try {
+          return Boolean(
+            tab &&
+              tab.iframe &&
+              tab.blobUrl &&
+              tab.iframe.src === tab.blobUrl &&
+              tab.iframe.contentWindow === source &&
+              tab.iframe.contentWindow.location.href === tab.blobUrl &&
+              origin === window.location.origin
+          );
+        } catch (_e) {
+          return false;
+        }
+      },
       buildProxyFrameUrl: (url) => buildProxiedPath(url),
       onStatus: (status) => {
         if (state.settings.proxyEngine === "wisp") {
@@ -621,7 +637,7 @@
     if (wispEngine) return Promise.resolve(wispEngine);
     preconnectWispRelays();
     if (!wispEngineLoadPromise) {
-      wispEngineLoadPromise = loadScriptOnce("/ui/wisp-engine.js?v=26")
+      wispEngineLoadPromise = loadScriptOnce("/ui/wisp-engine.js?v=27")
         .then(createWispEngine)
         .catch((err) => {
           wispEngineLoadPromise = null;
@@ -1745,7 +1761,8 @@
       const targetWin =
         tab && tab.iframe && tab.iframe.contentWindow
           ? tab.iframe.contentWindow
-          : window;
+          : null;
+      if (!targetWin) throw new Error("No active tab");
       const result = targetWin.eval(decoded);
       appendConsoleLine("> " + decoded, result);
       showToast("Executed javascript: snippet");
@@ -1759,9 +1776,9 @@
     const resolved = resolveInputToUrl(rawOrResolvedUrl);
     if (!resolved) return;
 
-    // 1) javascript: bookmarklet execution
+    // Never execute omnibox input as code, including URLs sent by frames.
     if (/^javascript:/i.test(resolved)) {
-      executeJavascriptInActiveTab(resolved);
+      showToast("JavaScript URLs are not supported.");
       return;
     }
 
@@ -2357,6 +2374,9 @@
     });
   }
 
+  // Only an explicitly opened extension popup may use the extension bridge.
+  let extensionPopupUrl = "";
+
   // --- Floating Mini-Window (PiP) ---
   function openMiniPlayer(targetUrl, titleText, isRawBlob) {
     const winEl = document.getElementById("miniPlayerWindow");
@@ -2366,6 +2386,7 @@
     titleEl.textContent = titleText || "Mini Window";
     winEl.classList.remove("hidden");
 
+    extensionPopupUrl = isRawBlob && /^blob:/i.test(targetUrl) ? targetUrl : "";
     if (isRawBlob) {
       frameEl.src = targetUrl;
       return;
@@ -2396,6 +2417,7 @@
 
     closeBtn.addEventListener("click", () => {
       winEl.classList.add("hidden");
+      extensionPopupUrl = "";
       document.getElementById("miniPlayerFrame").src = "about:blank";
     });
 
@@ -3304,6 +3326,15 @@
     } catch (_e) {}
   }
 
+  function escapeChatHtml(value) {
+    return String(value == null ? "" : value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
   async function refreshChatMessages() {
     const drawer = document.getElementById("chatDrawer");
     if (!drawer || drawer.classList.contains("hidden")) return;
@@ -3315,22 +3346,22 @@
 
       if (pollBox) {
         if (d.poll && d.poll.options) {
-          const safeQ = String(d.poll.question || "").replace(/</g, "&lt;");
+          const safeQ = escapeChatHtml(d.poll.question || "");
           pollBox.innerHTML =
             "<div><strong>📊 " +
             safeQ +
             '</strong> <span class="relay-mini-badge">' +
-            d.poll.totalVotes +
+            escapeChatHtml(d.poll.totalVotes) +
             " votes</span></div>" +
             d.poll.options
               .map(
                 (o) =>
                   '<button type="button" class="poll-opt-btn" data-vote-opt="' +
-                  o.id +
+                  escapeChatHtml(o.id) +
                   '"><span>' +
-                  String(o.label).replace(/</g, "&lt;") +
+                  escapeChatHtml(o.label) +
                   "</span><strong>" +
-                  o.votes +
+                  escapeChatHtml(o.votes) +
                   "</strong></button>"
               )
               .join("");
@@ -3367,10 +3398,14 @@
         .map((m) => {
           const badge =
             m.role && m.role !== "USER"
-              ? '<span class="chat-badge-' + m.role + '">' + m.role + "</span> "
+              ? '<span class="chat-badge-' +
+                escapeChatHtml(m.role) +
+                '">' +
+                escapeChatHtml(m.role) +
+                "</span> "
               : "";
-          const safeAuthor = String(m.author || "user").replace(/</g, "&lt;");
-          const safeText = String(m.text || "").replace(/</g, "&lt;");
+          const safeAuthor = escapeChatHtml(m.author || "user");
+          const safeText = escapeChatHtml(m.text || "");
           return (
             '<div class="log-row" style="flex-wrap:wrap">' +
             badge +
@@ -3738,6 +3773,7 @@
   }
 
   const INTERNAL_OMNI_DIRECTORY = [
+    { url: "iboss://study", title: "Study Hub", tag: "Page" },
     { url: "iboss://games", title: "200+ Games & Apps Hub", tag: "Page" },
     { url: "iboss://media", title: "Ad-Free YouTube & Radio", tag: "Page" },
     {
@@ -4539,6 +4575,14 @@
       navigateTab(tab, "iboss://games", true);
     });
 
+    const studyHubBtn = document.getElementById("studyHubBtn");
+    if (studyHubBtn) {
+      studyHubBtn.addEventListener("click", () => {
+        const tab = getActiveTab() || createTab("", true);
+        navigateTab(tab, "iboss://study", true);
+      });
+    }
+
     const cineCloudBtn = document.getElementById("cineCloudBtn");
     if (cineCloudBtn) {
       cineCloudBtn.addEventListener("click", () => {
@@ -4622,7 +4666,13 @@
     window.addEventListener("message", async (ev) => {
       const d = ev && ev.data;
       if (!d || typeof d !== "object") return;
+      const senderTab = state.tabs.find(
+        (tab) => tab.iframe && tab.iframe.contentWindow === ev.source
+      );
+      if (!senderTab || ev.origin !== window.location.origin) return;
       if (d.type === "iboss:failover-retry") {
+        if (senderTab.id !== state.activeTabId || d.url !== senderTab.url)
+          return;
         let switched = null;
         if (scramjetEngine && scramjetEngine.failoverRelay) {
           try {
@@ -4643,8 +4693,12 @@
           }
         }
       } else if (d.type === "iboss:navigate-active" && d.url) {
-        const tab = getActiveTab() || createTab("", true);
-        navigateTab(tab, d.url, true);
+        if (senderTab.id !== state.activeTabId) return;
+        const allowedHttps = /^http:\/\//i.test(senderTab.url)
+          ? senderTab.url.replace(/^http:\/\//i, "https://")
+          : "";
+        if (d.url !== allowedHttps && d.url !== "iboss://media") return;
+        navigateTab(senderTab, d.url, true);
       }
     });
 
@@ -5211,16 +5265,31 @@
       const msg = ev.data;
       if (!msg || typeof msg !== "object") return;
 
-      if (msg.__ibossExtExec && msg.code) {
+      const popup = document.getElementById("miniPlayerFrame");
+      let trustedPopup = false;
+      try {
+        trustedPopup = Boolean(
+          extensionPopupUrl &&
+            popup &&
+            popup.contentWindow === ev.source &&
+            ev.origin === window.location.origin &&
+            popup.contentWindow.location.href === extensionPopupUrl
+        );
+      } catch (_e) {}
+      if (msg.__ibossExtExec && msg.code && trustedPopup) {
         executeJavascriptInActiveTab(msg.code);
         return;
       }
 
-      if (msg.__ibossExtOpen && msg.url) {
+      if (msg.__ibossExtOpen && msg.url && trustedPopup) {
         createTab(msg.url, true);
         return;
       }
 
+      const matchingTab = state.tabs.find(
+        (t) => t.iframe && t.iframe.contentWindow === ev.source
+      );
+      if (!matchingTab || ev.origin !== window.location.origin) return;
       if (msg.type === "ibossbad:keydown") {
         if (state.settings.panicKey && msg.key === state.settings.panicKey) {
           handleBossKeyActivation();
@@ -5229,9 +5298,6 @@
       }
 
       if (msg.type === "ibossbad:navigation") {
-        const matchingTab = state.tabs.find(
-          (t) => t.iframe && t.iframe.contentWindow === ev.source
-        );
         if (matchingTab) {
           if (msg.url) matchingTab.url = msg.url;
           if (msg.title) matchingTab.title = msg.title;
