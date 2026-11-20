@@ -108,3 +108,56 @@ tap.test(
     t.same(JSON.parse(JSON.stringify(output)).runs.length, 12);
   }
 );
+
+tap.test(
+  "navigation timeouts are retained and excluded from statistics",
+  async (t) => {
+    const { EventEmitter } = require("events");
+    const page = new EventEmitter();
+    const opts = benchmark.parseArgs([
+      "--proxy",
+      "http://localhost:8080",
+      "--timeout-ms",
+      "5000",
+    ]);
+    let clock = 1000;
+    const originalNow = Date.now;
+    Date.now = () => clock;
+    page.goto = async (_url, options) => {
+      t.equal(
+        options.timeout,
+        5000,
+        "passes the per-navigation timeout to Playwright"
+      );
+      clock += options.timeout;
+      throw new Error("page.goto: Timeout 5000ms exceeded");
+    };
+    try {
+      const site = { category: "slow", url: "https://example.test/" };
+      const result = await benchmark.runOne(
+        { page, warmupSucceeded: false },
+        site,
+        "direct",
+        opts,
+        "measured",
+        1,
+        1
+      );
+      t.equal(result.ok, false);
+      t.match(result.error, /Timeout 5000ms/);
+      t.equal(result.elapsedMs, 5000);
+      t.equal(
+        page.listenerCount("request"),
+        0,
+        "listeners are removed after timeout"
+      );
+      const summary = benchmark.summarize([result])[0];
+      t.equal(summary.failures, 1);
+      t.equal(summary.failureRate, 1);
+      t.equal(summary.medianLoadMs, null);
+      t.equal(summary.p95LoadMs, null);
+    } finally {
+      Date.now = originalNow;
+    }
+  }
+);

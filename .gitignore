@@ -6,3 +6,5 @@ node_modules/
 .nyc_output/
 .vscode/
 examples/*/package-lock.json
+
+benchmark-results/

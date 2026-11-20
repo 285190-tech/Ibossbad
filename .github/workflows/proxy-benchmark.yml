@@ -1,6 +1,10 @@
 name: Experimental proxy benchmark
 
 on:
+  # Temporary branch-only trigger for the ten-run cold-cache validation.
+  push:
+    branches: [arena/4723f1ba-ibossbad]
+    paths: ['.github/workflows/proxy-benchmark.yml']
   workflow_dispatch:
     inputs:
       site_url:
@@ -12,6 +16,12 @@ on:
         default: '2'
         required: true
         type: string
+      cache:
+        description: 'Browser context cache policy'
+        default: 'warm'
+        required: true
+        type: choice
+        options: ['warm', 'cold']
       shield:
         description: 'Shield configuration'
         default: 'off'
@@ -45,8 +55,10 @@ jobs:
       - name: Start local app and run two unthrottled repetitions
         env:
           SITE_URL: ${{ inputs.site_url }}
-          RUNS: ${{ inputs.runs || '2' }}
+          RUNS: ${{ github.event_name == 'push' && '10' || inputs.runs || '2' }}
           SHIELD: ${{ inputs.shield || 'off' }}
+          CACHE: ${{ github.event_name == 'push' && 'cold' || inputs.cache || 'warm' }}
+          CI_COMPARISON: ${{ github.event_name == 'push' && 'yes' || '' }}
           PORT: '8080'
         run: |
           set -eu
@@ -82,14 +94,17 @@ jobs:
             } finally { await context.dispose(); }
           })().catch(() => { console.error('Could not prepare local authentication state.'); process.exitCode = 1; });
           NODE
-          if [ -n "$SITE_URL" ]; then
+          if [ -n "$CI_COMPARISON" ]; then
+            node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify([{category:"light",url:"https://example.com/"},{category:"script-heavy",url:"https://github.com/nodejs/node"}]))' "$RUNNER_TEMP/proxy-benchmark-sites.json"
+            set -- --sites "$RUNNER_TEMP/proxy-benchmark-sites.json" --timeout-ms 20000
+          elif [ -n "$SITE_URL" ]; then
             node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify([{category: "custom", url: process.env.SITE_URL}]))' "$RUNNER_TEMP/proxy-benchmark-sites.json"
             set -- --sites "$RUNNER_TEMP/proxy-benchmark-sites.json"
           else
             set --
           fi
           for repeat in 1 2; do
-            node scripts/benchmark-proxy.js --proxy http://127.0.0.1:8080 --proxy-revision "$(git rev-parse HEAD)" --runs "$RUNS" --shield "$SHIELD" --storage-state "$RUNNER_TEMP/benchmark-state.json" --output "$RUNNER_TEMP/proxy-benchmark/run-$repeat.json" "$@"
+            node scripts/benchmark-proxy.js --proxy http://127.0.0.1:8080 --proxy-revision "$(git rev-parse HEAD)" --runs "$RUNS" --shield "$SHIELD" --cache "$CACHE" --storage-state "$RUNNER_TEMP/benchmark-state.json" --output "$RUNNER_TEMP/proxy-benchmark/run-$repeat.json" "$@"
           done
       - name: Upload benchmark JSON
         if: always()

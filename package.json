@@ -40,7 +40,7 @@
     "jsdom": "^20.0.3",
     "math-helpers": "~0.1.0",
     "nodemon": "^2.0.2",
-    "playwright": "^1.56.1",
+    "playwright": "1.56.1",
     "prettier": "2.2.1",
     "tap": "^15.0.5",
     "ws": "^7.4.4"
